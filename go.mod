@@ -1,4 +1,4 @@
-module xdp
+module github.com/cccoven/trafficbus
 
 go 1.21.4
 

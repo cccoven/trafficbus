@@ -12,24 +12,6 @@ import (
 	"github.com/cilium/ebpf"
 )
 
-type bpfEvent struct {
-	Id   uint32
-	Ids  [80]uint8
-	Name [10]uint8
-	_    [2]byte
-}
-
-type bpfKey struct {
-	Srcip uint32
-	Name  [10]uint8
-	_     [2]byte
-}
-
-type bpfValue struct {
-	Packets uint64
-	Bytes   uint64
-}
-
 // loadBpf returns the embedded CollectionSpec for bpf.
 func loadBpf() (*ebpf.CollectionSpec, error) {
 	reader := bytes.NewReader(_BpfBytes)
@@ -78,8 +60,6 @@ type bpfProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type bpfMapSpecs struct {
-	Myevents *ebpf.MapSpec `ebpf:"myevents"`
-	XdpMap   *ebpf.MapSpec `ebpf:"xdp_map"`
 }
 
 // bpfObjects contains all objects after they have been loaded into the kernel.
@@ -101,15 +81,10 @@ func (o *bpfObjects) Close() error {
 //
 // It can be passed to loadBpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type bpfMaps struct {
-	Myevents *ebpf.Map `ebpf:"myevents"`
-	XdpMap   *ebpf.Map `ebpf:"xdp_map"`
 }
 
 func (m *bpfMaps) Close() error {
-	return _BpfClose(
-		m.Myevents,
-		m.XdpMap,
-	)
+	return _BpfClose()
 }
 
 // bpfPrograms contains all programs after they have been loaded into the kernel.
