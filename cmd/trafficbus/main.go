@@ -1,7 +1,9 @@
 package main
 
-import "xdp/internal/ebpf/xdp"
+import (
+	"xdp/internal/ebpf/xdp"
+)
 
 func main() {
-	xdp.Run("enp0s3")
+	xdp.Run("ens3")
 }

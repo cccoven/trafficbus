@@ -1,12 +1,10 @@
 package xdp
 
 import (
-	"bytes"
-	"encoding/binary"
-	"errors"
 	"fmt"
 	"log"
 	"net"
+	"time"
 
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/ringbuf"
@@ -47,38 +45,39 @@ func Run(ifaceName string) {
 	}
 	defer rd.Close()
 
-	var event bpfEvent
-	for {
-		record, err := rd.Read()
-		if err != nil {
-			if errors.Is(err, ringbuf.ErrClosed) {
-				log.Println("Received signal, exiting..")
-				return
-			}
-			log.Printf("reading from reader: %s", err)
-			continue
-		}
+	// var event bpfEvent
+	// for {
+	// 	record, err := rd.Read()
+	// 	if err != nil {
+	// 		if errors.Is(err, ringbuf.ErrClosed) {
+	// 			log.Println("Received signal, exiting..")
+	// 			return
+	// 		}
+	// 		log.Printf("reading from reader: %s", err)
+	// 		continue
+	// 	}
 
-		err = binary.Read(bytes.NewBuffer(record.RawSample), binary.LittleEndian, &event)
-		if err != nil {
-			log.Printf("parsing ringbuf event: %s", err)
-			continue
-		}
+	// 	err = binary.Read(bytes.NewBuffer(record.RawSample), binary.LittleEndian, &event)
+	// 	if err != nil {
+	// 		log.Printf("parsing ringbuf event: %s", err)
+	// 		continue
+	// 	}
 
-		log.Printf("id: %d\n", event.Id)
-		fmt.Println(event.Ids)
-		unix.ByteSliceToString(event.Name[:])
-		fmt.Printf("%s\n", event.Name)
-	}
+	// 	log.Printf("id: %d\n", event.Id)
+	// 	fmt.Println(event.Ids)
+	// 	unix.ByteSliceToString(event.Name[:])
+	// 	fmt.Printf("%s\n", event.Name)
+	// }
 
 	// Print the contents of the BPF hash map (source IP address -> packet count).
-	// ticker := time.NewTicker(1 * time.Second)
-	// defer ticker.Stop()
-	// for range ticker.C {
-	// 	// var key, val string
-	// 	// it := objs.XdpStrMap.Iterate()
-	// 	// for it.Next(&key, &val) {
-	// 	// 	fmt.Println(key, ", ", val)
-	// 	// }
-	// }
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		var key bpfKey
+		var value bpfValue
+		it := objs.XdpMap.Iterate()
+		for it.Next(&key, &value) {
+			fmt.Println(unix.ByteSliceToString(key.Name[:]), ", ", value)
+		}
+	}
 }

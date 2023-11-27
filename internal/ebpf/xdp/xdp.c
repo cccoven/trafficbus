@@ -5,30 +5,23 @@
 
 char __license[] SEC("license") = "Dual MIT/GPL";
 
-enum xdp_action {
-    XDP_ABORTED = 0,
-    XDP_DROP,
-    XDP_PASS,
-    XDP_TX,
-    XDP_REDIRECT,
+#define MAX_MAP_ENTRIES 1024
+
+struct key {
+    __u32 srcip;
+    __u8 name[10];
 };
 
-struct xdp_md {
-    __u32 data;
-    __u32 data_end;
-    __u32 data_meta;
-    __u32 ingress_ifindex;
-    __u32 rx_queue_index;
-    __u32 egress_ifindex;
+struct value {
+    __u64 packets;
+    __u64 bytes;
 };
-
-#define MAX_MAP_ENTRIES 16
 
 struct {
 	__uint(type, BPF_MAP_TYPE_LRU_HASH);
 	__uint(max_entries, MAX_MAP_ENTRIES);
-	__type(key, __u32); // source IPv4 address
-	__type(value, __u32); // packet count
+    __type(key, struct key);
+    __type(value, struct value);
 } xdp_map SEC(".maps");
 
 __u32 get_str_len(const char str[]) {
@@ -59,21 +52,34 @@ int xdp_prod_func(struct xdp_md *ctx) {
     // const char fmt_str[] = "Hello, world, from BPF! My PID is %d\n";
     // bpf_trace_printk(fmt_str, sizeof(fmt_str), 111);
 
-    __u32 k = 100;
-    __u32 *v = bpf_map_lookup_elem(&xdp_map, &k);
-
-    if (v) {
-        const char info[] = "[%d]: %d\n";
-        // bpf_trace_printk(info, sizeof(info), k, *v);
-    }
+    // __u32 k = 100;
+    // __u32 *v = bpf_map_lookup_elem(&xdp_map, &k);
+    // if (v) {
+    //     const char info[] = "[%d]: %d\n";
+    //     bpf_trace_printk(info, sizeof(info), k, *v);
+    // }
 
     // char sk[10] = "foo";
-    // char *sv = "bar";
     // char sv[10] = "bar";
-    
     // bpf_trace_printk("%s:%s", get_str_len(sk) + get_str_len(sv), sk, sv);
+    // bpf_trace_printk("%d", 1, get_str_len(sk));
 
-    // bpf_map_update_elem(&xdp_str_map, sk, &sv, BPF_ANY);
+    // bpf_map_update_elem(&xdp_map, &sk, &sv, BPF_ANY);
+
+    // char v[10] = bpf_map_lookup_elem(&xdp_map, &sk);
+    // bpf_trace_printk("%s", 3, v);
+
+    struct key key = {
+        .srcip = 123,
+        .name = "hello"
+    };
+    struct value value = {
+        .packets = 100,
+        .bytes = 1024
+    };
+
+    bpf_map_update_elem(&xdp_map, &key, &value, BPF_ANY);
+    
 
     struct event *e;
     e = bpf_ringbuf_reserve(&myevents, sizeof(struct event), 0);

@@ -39,6 +39,26 @@ enum bpf_map_type {
 	BPF_MAP_TYPE_INODE_STORAGE         = 28,
 };
 
+/* XDP */
+enum xdp_action {
+    XDP_ABORTED = 0,
+    XDP_DROP,
+    XDP_PASS,
+    XDP_TX,
+    XDP_REDIRECT,
+};
+
+struct xdp_md {
+    __u32 data;
+    __u32 data_end;
+    __u32 data_meta;
+    __u32 ingress_ifindex;
+    __u32 rx_queue_index;
+    __u32 egress_ifindex;
+};
+
+
+/* helper call */
 static void *(*bpf_map_lookup_elem)(void *map, const void *key) = (void *) 1;
 
 static long (*bpf_map_update_elem)(void *map, const void *key, const void *value, __u64 flags) = (void *) 2;

@@ -19,6 +19,17 @@ type bpfEvent struct {
 	_    [2]byte
 }
 
+type bpfKey struct {
+	Srcip uint32
+	Name  [10]uint8
+	_     [2]byte
+}
+
+type bpfValue struct {
+	Packets uint64
+	Bytes   uint64
+}
+
 // loadBpf returns the embedded CollectionSpec for bpf.
 func loadBpf() (*ebpf.CollectionSpec, error) {
 	reader := bytes.NewReader(_BpfBytes)
