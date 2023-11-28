@@ -13,3 +13,4 @@ trace:
 playground:
 	@clang -o ./cplayground/$(PLAY_FILE) ./cplayground/$(PLAY_FILE).c
 	@./cplayground/$(PLAY_FILE)
+	@rm -f ./cplayground/$(PLAY_FILE)
