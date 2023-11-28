@@ -22,5 +22,4 @@ go.work
 
 .vscode
 
-demo.c
-demo
+cplayground
