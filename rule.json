@@ -1,6 +1,6 @@
 [
     {
-        "iface": "enp0s3",
+        "iface": "ens3",
         "modules": {
             "nat": {
                 "prerouting": [],

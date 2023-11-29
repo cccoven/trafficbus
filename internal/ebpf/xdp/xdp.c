@@ -39,6 +39,12 @@ struct modules {
     struct filter filter;
 };
 
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, MAX_MAP_ENTRIES);
+    
+} xdp_map SEC(".maps");
+
 SEC("xdp")
 int xdp_prod_func(struct xdp_md *ctx) {
     
