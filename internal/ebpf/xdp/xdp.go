@@ -9,7 +9,7 @@ import (
 	"github.com/cilium/ebpf/link"
 )
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target amd64 bpf xdp.c -- -I../include
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target amd64 xdp xdp.c -- -I../include
 
 type XDP struct {
 	iface string
@@ -28,8 +28,8 @@ func (x *XDP) Run() {
 	}
 
 	// Load pre-compiled programs into the kernel.
-	objs := bpfObjects{}
-	if err := loadBpfObjects(&objs, nil); err != nil {
+	objs := xdpObjects{}
+	if err := loadXdpObjects(&objs, nil); err != nil {
 		log.Fatalf("loading objects: %s", err)
 	}
 	defer objs.Close()
@@ -46,6 +46,14 @@ func (x *XDP) Run() {
 
 	log.Printf("Attached XDP program to iface %q (index %d)", iface.Name, iface.Index)
 	log.Printf("Press Ctrl-C to exit and remove the program")
+
+	var name [20]byte
+	str := "PREROUTING" // 长度为10的字符串
+	copy(name[:], str) // 将字符串转换为字节数组
+
+	objs.TableMap.Put(&name, uint32(100))
+
+	// objs.TableMap.Put(uint32(1), uint32(100))
 
 	for {
 		time.Sleep(1)
