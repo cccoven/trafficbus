@@ -9,7 +9,7 @@ import (
 	"github.com/cilium/ebpf/link"
 )
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target amd64 xdp xdp.c -- -I../include
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type xdp_action -type protocol -target amd64 bpf xdp.c -- -I../include
 
 type XDP struct {
 	iface string
@@ -28,8 +28,8 @@ func (x *XDP) Run() {
 	}
 
 	// Load pre-compiled programs into the kernel.
-	objs := xdpObjects{}
-	if err := loadXdpObjects(&objs, nil); err != nil {
+	objs := bpfObjects{}
+	if err := loadBpfObjects(&objs, nil); err != nil {
 		log.Fatalf("loading objects: %s", err)
 	}
 	defer objs.Close()
@@ -47,15 +47,33 @@ func (x *XDP) Run() {
 	log.Printf("Attached XDP program to iface %q (index %d)", iface.Name, iface.Index)
 	log.Printf("Press Ctrl-C to exit and remove the program")
 
-	var name [20]byte
-	str := "PREROUTING" // 长度为10的字符串
-	copy(name[:], str) // 将字符串转换为字节数组
+	rule := bpfXdpRule{
+		Num:             1,
+		Pkts:            0,
+		Bytes:           0,
+		Target:          uint32(bpfXdpActionXDP_PASS),
+		Protocol:        uint32(bpfProtocolTCP),
+		Source:          uint32(100),
+		SourceMask:      uint32(100),
+		Destination:     uint32(100),
+		DestinationMask: uint32(100),
+	}
+	rule2 := bpfXdpRule{
+		Num:             2,
+		Pkts:            0,
+		Bytes:           0,
+		Target:          uint32(bpfXdpActionXDP_DROP),
+		Protocol:        uint32(bpfProtocolTCP),
+		Source:          uint32(200),
+		SourceMask:      uint32(200),
+		Destination:     uint32(200),
+		DestinationMask: uint32(200),
+	}
 
-	objs.TableMap.Put(&name, uint32(100))
-
-	// objs.TableMap.Put(uint32(1), uint32(100))
+	objs.XdpRuleMap.Put(uint32(0), &rule)
+	objs.XdpRuleMap.Put(uint32(1), &rule2)
 
 	for {
-		time.Sleep(1)
+		time.Sleep(time.Second)
 	}
 }

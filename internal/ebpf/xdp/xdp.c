@@ -5,20 +5,16 @@
 
 char __license[] SEC("license") = "Dual MIT/GPL";
 
-#define MAX_TABLE 4
-#define MAX_CHAINS 1
-#define MAX_RULES 1
+#define MAX_RULES 10
 
-#define TABLE_NAT 1
-#define TABLE_FILTER 2
+enum protocol {
+    TCP = 0,
+    UDP,
+    ICMP,
+};
 
-const char CHAIN_PREROUTING[20] = "PREROUTING";
-const char CHAIN_INPUT[20] = "INPUT";
-const char CHAIN_FORWARD[20] =  "FORWARD";
-const char CHAIN_OUTPUT[20] = "OUTPUT";
-const char CHAIN_POSTROUTING[20] = "POSTROUTING";
-
-struct rule {
+// common rule
+struct xdp_rule {
     u32 num;
     u64 pkts;
     u64 bytes;
@@ -30,44 +26,71 @@ struct rule {
     u32 destination_mask;
 };
 
-struct chain {
-    u8 name[20];
-    struct rule rules[MAX_RULES];
-};
-
-struct table {
-    struct chain chains[MAX_CHAINS];
-};
-
-// struct {
-// 	__uint(type, BPF_MAP_TYPE_HASH);
-// 	__uint(max_entries, MAX_CHAINS);
-//     __type(key, u8[20]);
-//     __type(value, struct chain);
-// } chain_map SEC(".maps");
+// Force emitting enum xdp_action into the ELF.
+const enum xdp_action *action __attribute__((unused));
+const enum protocol *prot __attribute__((unused));
 
 struct {
-	__uint(type, BPF_MAP_TYPE_HASH);
-	__uint(max_entries, MAX_CHAINS);
-    __type(key, u8[20]);
-    __type(value, u32);
-} table_map SEC(".maps");
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, MAX_RULES);
+    __type(key, u32);
+    __type(value, struct xdp_rule);
+} xdp_rule_map SEC(".maps");
+
+long callback_fn(void *map, const void *key, void *value, void *ctx) {
+    const char info[] = "key: %d\n";
+    bpf_trace_printk(info, sizeof(info), key);
+
+    return 0;
+}
 
 SEC("xdp")
 int xdp_prod_func(struct xdp_md *ctx) {
 
-    // u32 k = TABLE_NAT;
-    // u32 *v = bpf_map_lookup_elem(&table_map, &k);
-    // if (v) {
-    //     const char info[] = "[%d]: %d\n";
-    //     bpf_trace_printk(info, sizeof(info), k, *v);
+    // u32 k = 0;
+    // struct xdp_rule *rule;
+    // rule = bpf_map_lookup_elem(&xdp_rule_map, &k);
+    // if (rule) {
+    //     const char info[] = " source: %d,  dst: %d\n";
+    //     bpf_trace_printk(info, sizeof(info), rule->source, rule->destination);
+    // }
+    // k = 1;
+    // rule = bpf_map_lookup_elem(&xdp_rule_map, &k);
+    // if (rule) {
+    //     const char info[] = " source: %d,  dst: %d\n";
+    //     bpf_trace_printk(info, sizeof(info), rule->source, rule->destination);
     // }
 
-    u32 *v = bpf_map_lookup_elem(&table_map, &CHAIN_PREROUTING);
-    if (v) {
-        const char info[] = "[%s]: %d\n";
-        bpf_trace_printk(info, sizeof(info), CHAIN_PREROUTING, *v);
+    u32 i;
+    struct xdp_rule *rule;
+    for (i = 0; i < 1; i++) {
+        const char debug[] = "index: %d\n";
+        bpf_trace_printk(debug, sizeof(debug), i);
+
+        rule = bpf_map_lookup_elem(&xdp_rule_map, &i);
+        if (!rule) {
+            continue;
+        }
+
+        // const char info[] = " source: %d,  dst: %d\n";
+        // bpf_trace_printk(info, sizeof(info), rule->source, rule->destination);
     }
-    
+
+    // u32 i;
+    // struct xdp_rule *rule;
+    // while (i < MAX_RULES) {
+    //     const char debug[] = "index: %d\n";
+    //     bpf_trace_printk(debug, sizeof(debug), i);
+
+    //     rule = bpf_map_lookup_elem(&xdp_rule_map, &i);
+    //     if (rule) {
+    //         const char info[] = " source: %d,  dst: %d\n";
+    //         bpf_trace_printk(info, sizeof(info), rule->source, rule->destination);
+    //     }
+    //     break;
+    // }
+
+    // bpf_for_each_map_elem(&xdp_rule_map, callback_fn, , BPF_ANY);
+
     return XDP_PASS;
 }
