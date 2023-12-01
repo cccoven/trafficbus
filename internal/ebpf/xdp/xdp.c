@@ -1,7 +1,7 @@
 //go:build ignore
 
-#include "defs.h"
 #include "bpf_helper.h"
+#include "bpf_endian.h"
 
 char __license[] SEC("license") = "Dual MIT/GPL";
 
@@ -39,15 +39,13 @@ struct {
 
 
 struct callback_ctx {
+    struct xdp_md *pkt;
     __u32 action;
 };
 
 static __u64 callback_fn(void *map, __u32 *key, struct xdp_rule *value, struct callback_ctx *ctx) {
-    const char debug[] = "idx: %d\n";
-    bpf_trace_printk(debug, sizeof(debug), *key);
-
-    const char info[] = "idx: %d, source: %d,  dst: %d\n";
-    bpf_trace_printk(info, sizeof(info), *key, value->source, value->destination);
+    // const char info[] = "idx: %d, source: %d,  dst: %d\n";
+    // bpf_trace_printk(info, sizeof(info), *key, value->source, value->destination);
 
     if (*key == 0) {
         ctx->action = value->target;
@@ -62,13 +60,29 @@ static __u64 callback_fn(void *map, __u32 *key, struct xdp_rule *value, struct c
 
 SEC("xdp")
 int xdp_prod_func(struct xdp_md *ctx) {
+    void *data = (void *)(long) ctx->data;
+    void *data_end = (void *)(long) ctx->data_end;
+
+    // parse ether header
+    struct ethhdr *eth = data;
+    if ((void *)(eth + 1) > data_end) {
+        return XDP_PASS;
+    }
+
+    if (eth->h_proto == bpf_ntohl(ETH_P_IP)) {
+        // protocol IPv4
+        const char debug[] = "ipv4: %d\n";
+        bpf_trace_printk(debug, sizeof(debug), eth->h_proto);
+    }
+        
     struct callback_ctx cb_ctx = {
-        .action = 0,
+        .pkt = ctx,
+        .action = XDP_PASS,
     };
     bpf_for_each_map_elem(&xdp_rule_map, callback_fn, &cb_ctx, BPF_ANY);
 
-    const char debug[] = "rule result: %d\n";
-    bpf_trace_printk(debug, sizeof(debug), cb_ctx.action);
+    // const char debug[] = "rule result: %d\n";
+    // bpf_trace_printk(debug, sizeof(debug), cb_ctx.action);
 
     return cb_ctx.action;
 }
