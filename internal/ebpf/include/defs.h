@@ -14,6 +14,10 @@
     __attribute__((section(name), used))                    \
     _Pragma("GCC diagnostic pop")                       \
 
+/* Avoid 'linux/stddef.h' definition of '__always_inline'. */
+#undef __always_inline
+#define __always_inline inline __attribute__((always_inline))
+
 #define __uint(name, val) int (*name)[val]
 #define __type(name, val) typeof(val) *name
 
@@ -34,6 +38,7 @@ typedef __s64 s64;
 typedef __u64 u64;
 typedef __u16 __le16;
 typedef __u16 __be16;
+typedef __u16 __sum16;
 typedef __u32 __be32;
 typedef __u64 __be64;
 typedef __u32 __wsum;
@@ -46,7 +51,41 @@ typedef __u32 __wsum;
 #define ETH_TLEN	2		/* Octets in ethernet type field */
 
 struct ethhdr {
-	unsigned char	h_dest[ETH_ALEN];	/* destination eth addr	*/
-	unsigned char	h_source[ETH_ALEN];	/* source ether addr	*/
-	__be16		h_proto;		/* packet type ID field	*/
+	unsigned char   h_dest[ETH_ALEN];	/* destination eth addr	*/
+	unsigned char   h_source[ETH_ALEN];	/* source ether addr	*/
+	__be16  h_proto;		/* packet type ID field	*/
+};
+
+struct iphdr {
+    __u8    ihl: 4;
+    __u8    version: 4;
+    __u8    tos;
+	__be16  tot_len;
+	__be16  id;
+	__be16  frag_off;
+	__u8    ttl;
+	__u8    protocol;
+	__sum16 check;
+    __be32  saddr;
+    __be32  daddr;
+};
+
+struct tcphdr {
+    __be16  source;
+	__be16  dest;
+	__be32  seq;
+	__be32	ack_seq;
+    __u16   res1: 4;
+    __u16   doff: 4;
+    __u16   fin: 1;
+    __u16   syn: 1;
+    __u16   rst: 1;
+    __u16   psh: 1;
+    __u16   ack: 1;
+    __u16   urg: 1;
+    __u16   ece: 1;
+    __u16   cwr: 1;
+    __be16	window;
+	__sum16	check;
+	__be16	urg_ptr;
 };

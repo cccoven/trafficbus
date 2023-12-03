@@ -39,7 +39,6 @@ struct {
 
 
 struct callback_ctx {
-    struct xdp_md *pkt;
     __u32 action;
 };
 
@@ -57,26 +56,55 @@ static __u64 callback_fn(void *map, __u32 *key, struct xdp_rule *value, struct c
     return 0;
 }
 
+// keep track of current parsing position
+struct cursor {
+    void *pos;
+};
 
-SEC("xdp")
-int xdp_prod_func(struct xdp_md *ctx) {
-    void *data = (void *)(long) ctx->data;
-    void *data_end = (void *)(long) ctx->data_end;
+static __always_inline int parse_ip(struct xdp_md *ctx, struct iphdr *ip) {
+    void *data = (void *)(long)ctx->data;
+    void *data_end = (void *)(long)ctx->data_end;
 
     // parse ether header
     struct ethhdr *eth = data;
     if ((void *)(eth + 1) > data_end) {
-        return XDP_PASS;
+        return 0;
     }
 
-    if (eth->h_proto == bpf_ntohl(ETH_P_IP)) {
-        // protocol IPv4
-        const char debug[] = "ipv4: %d\n";
-        bpf_trace_printk(debug, sizeof(debug), eth->h_proto);
+    // IPv4
+    if (eth->h_proto != bpf_ntohs(ETH_P_IP)) {
+        return 0;
+    }
+
+    // parse IPv4
+    // `eth + 1` 实际上指向了 `data + sizeof(*eth)` 的位置
+    // 后者可以达到相同的效果
+    struct iphdr *ip = (void *)(eth + 1);
+    if ((void *)(ip + 1) > data_end) {
+        return 0;
+    }
+
+    return 1;
+
+    // struct tcphdr *tcp = (void *)(ip + 1);
+    // if ((void *)(tcp + 1) > data_end) {
+    //     return 0;
+    // }
+
+    // const char tcpinfo[] = "source: %d, dst: %d\n";
+    // bpf_trace_printk(tcpinfo, sizeof(tcpinfo), tcp->source, tcp->dest);
+
+    return 1;
+}
+
+SEC("xdp")
+int xdp_prod_func(struct xdp_md *ctx) {
+    struct iphdr *ip;
+    if (!parse_ip(ctx, ip)) {
+        goto done;
     }
         
     struct callback_ctx cb_ctx = {
-        .pkt = ctx,
         .action = XDP_PASS,
     };
     bpf_for_each_map_elem(&xdp_rule_map, callback_fn, &cb_ctx, BPF_ANY);
@@ -84,5 +112,6 @@ int xdp_prod_func(struct xdp_md *ctx) {
     // const char debug[] = "rule result: %d\n";
     // bpf_trace_printk(debug, sizeof(debug), cb_ctx.action);
 
+done:
     return cb_ctx.action;
 }
