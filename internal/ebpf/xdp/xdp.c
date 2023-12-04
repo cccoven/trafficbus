@@ -8,9 +8,9 @@ char __license[] SEC("license") = "Dual MIT/GPL";
 #define MAX_RULES 2
 
 enum protocol {
-    TCP = 0,
-    UDP,
-    ICMP,
+    ICMP = IPPROTO_ICMP,
+    UDP = IPPROTO_UDP,
+    TCP = IPPROTO_TCP,
 };
 
 // common rule
@@ -71,14 +71,13 @@ static __always_inline int parse_ip(struct xdp_md *ctx, struct iphdr *ip) {
         return 0;
     }
 
-    // IPv4
+    // make sure it's IPv4
     if (eth->h_proto != bpf_ntohs(ETH_P_IP)) {
         return 0;
     }
 
     // parse IPv4
-    // `eth + 1` 实际上指向了 `data + sizeof(*eth)` 的位置
-    // 后者可以达到相同的效果
+    // `eth + 1` is equal to `data + sizeof(*eth)`
     struct iphdr *ip = (void *)(eth + 1);
     if ((void *)(ip + 1) > data_end) {
         return 0;

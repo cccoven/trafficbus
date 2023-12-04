@@ -47,8 +47,12 @@ typedef __u32 __wsum;
 #define ETH_P_IP	0x0800		/* Internet Protocol packet	*/
 #define ETH_P_IPV6	0x86DD		/* IPv6 over bluebook		*/
 
-#define ETH_ALEN	6		/* Octets in one ethernet addr	 */
+#define ETH_ALEN    6		/* Octets in one ethernet addr	 */
 #define ETH_TLEN	2		/* Octets in ethernet type field */
+
+#define IPPROTO_ICMP    1               /* control message protocol */
+#define IPPROTO_TCP     6               /* tcp */
+#define IPPROTO_UDP     17              /* user datagram protocol */
 
 struct ethhdr {
 	unsigned char   h_dest[ETH_ALEN];	/* destination eth addr	*/

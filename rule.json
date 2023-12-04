@@ -1,24 +1,13 @@
 [
     {
         "iface": "enp0s3",
-        "tables": {
-            "nat": {
-                "prerouting": [],
-                "postrouting": []
-            },
-            "filter": {
-                "input": [
-                    {
-                        "protocol": "tcp",
-                        "source_ip": "192.168.0.0/24",
-                        "source_port": 0,
-                        "dst_ip": "",
-                        "dst_port": 22,
-                        "target": "ACCEPT"
-                    }
-                ],
-                "output": []
+        "rules": [
+            {
+                "target": "ACCEPT",
+                "protocol": "TCP",
+                "source": "192.168.0.0/24",
+                "destination": "0.0.0.0/0"
             }
-        }
+        ]
     }
 ]

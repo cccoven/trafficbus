@@ -1,7 +1,7 @@
 package main
 
 import (
-	"encoding/json"
+	"flag"
 	"log"
 	"os"
 	"os/signal"
@@ -11,20 +11,24 @@ import (
 	"github.com/cccoven/trafficbus/internal/ebpf/xdp"
 )
 
+var (
+	ruleFile string
+)
+
+func init() {
+	flag.StringVar(&ruleFile, "f", "", "the rule set file")
+}
+
 func main() {
-	data, err := os.ReadFile("rule.json")
-	if err != nil {
-		log.Fatal("failed to load rules: ", err.Error())
-	}
-	var ruleSet []trafficbus.RuleSet
-	err = json.Unmarshal(data, &ruleSet)
-	if err != nil {
-		log.Fatal("failed to unmarshal rule data: ", err.Error())
-	}
+	ruleSet := trafficbus.LoadRuleSetFromJSON(ruleFile)
 
 	for _, rs := range ruleSet {
 		go func(rs trafficbus.RuleSet) {
-			progXDP := xdp.NewXDP(rs.IFace)
+			rules, err := xdp.ConvertToXDPRule(rs.Rules)
+			if err != nil {
+				log.Printf("iface %s failed to convert rule: %s", rs.IFace, err.Error())
+			}
+			progXDP := xdp.NewXDP(rs.IFace, rules)
 			progXDP.Run()
 		}(rs)
 	}
