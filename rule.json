@@ -1,11 +1,11 @@
 [
     {
-        "iface": "enp0s3",
+        "iface": "ens3",
         "rules": [
             {
                 "target": "ACCEPT",
                 "protocol": "TCP",
-                "source": "192.168.0.0/24",
+                "source": "192.168.0.1/16",
                 "destination": "0.0.0.0/0"
             }
         ]

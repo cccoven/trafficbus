@@ -78,10 +78,10 @@ static __always_inline int parse_ip(struct xdp_md *ctx, struct iphdr *ip) {
 
     // parse IPv4
     // `eth + 1` is equal to `data + sizeof(*eth)`
-    struct iphdr *ip = (void *)(eth + 1);
-    if ((void *)(ip + 1) > data_end) {
-        return 0;
-    }
+    // struct iphdr *ip = (void *)(eth + 1);
+    // if ((void *)(ip + 1) > data_end) {
+    //     return 0;
+    // }
 
     return 1;
 

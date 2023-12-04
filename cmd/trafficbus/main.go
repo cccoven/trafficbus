@@ -16,7 +16,7 @@ var (
 )
 
 func init() {
-	flag.StringVar(&ruleFile, "f", "", "the rule set file")
+	flag.StringVar(&ruleFile, "f", "rule.json", "the rule set file")
 }
 
 func main() {

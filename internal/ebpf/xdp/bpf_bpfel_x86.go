@@ -15,9 +15,9 @@ import (
 type bpfProtocol uint32
 
 const (
-	bpfProtocolTCP  bpfProtocol = 0
-	bpfProtocolUDP  bpfProtocol = 1
-	bpfProtocolICMP bpfProtocol = 2
+	bpfProtocolICMP bpfProtocol = 1
+	bpfProtocolUDP  bpfProtocol = 17
+	bpfProtocolTCP  bpfProtocol = 6
 )
 
 type bpfXdpAction uint32
