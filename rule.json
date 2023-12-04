@@ -5,7 +5,7 @@
             {
                 "target": "ACCEPT",
                 "protocol": "TCP",
-                "source": "192.168.0.1/16",
+                "source": "192.168.0.1/24",
                 "destination": "0.0.0.0/0"
             }
         ]

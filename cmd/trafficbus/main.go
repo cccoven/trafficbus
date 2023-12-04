@@ -24,7 +24,7 @@ func main() {
 
 	for _, rs := range ruleSet {
 		go func(rs trafficbus.RuleSet) {
-			rules, err := xdp.ConvertToXDPRule(rs.Rules)
+			rules, err := xdp.ConvertToXdpRule(rs.Rules)
 			if err != nil {
 				log.Printf("iface %s failed to convert rule: %s", rs.IFace, err.Error())
 			}

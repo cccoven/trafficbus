@@ -1,9 +1,6 @@
 package xdp
 
 import (
-	"fmt"
-	"net"
-
 	"github.com/cccoven/trafficbus"
 )
 
@@ -22,31 +19,27 @@ var (
 	}
 )
 
-func ConvertToXDPRule(ori []trafficbus.Rule) ([]bpfXdpRule, error) {
+func ConvertToXdpRule(ori []trafficbus.Rule) ([]bpfXdpRule, error) {
 	var rules []bpfXdpRule
+	var err error
 
 	for _, item := range ori {
 		r := bpfXdpRule{
-			Num:             uint32(item.Num),
-			Pkts:            0,
-			Bytes:           0,
-			Target:          uint32(TargetMap[item.Target]),
-			Protocol:        uint32(ProtocolMap[item.Protocol]),
-			Source:          0,
-			SourceMask:      0,
-			Destination:     0,
-			DestinationMask: 0,
+			Num:      uint32(item.Num),
+			Target:   uint32(TargetMap[item.Target]),
+			Protocol: uint32(ProtocolMap[item.Protocol]),
 		}
 
-		sourceIP, sourceIPNet, err := net.ParseCIDR(item.Source)
+		r.Source, r.SourceMask, err = trafficbus.ParseV4CIDRU32(item.Source)
 		if err != nil {
 			return nil, err
 		}
-	
-		fmt.Println(sourceIP.String())
-		fmt.Println(sourceIPNet.IP.String())
-		fmt.Println(sourceIPNet.Mask.Size())
-		
+
+		r.Destination, r.DestinationMask, err = trafficbus.ParseV4CIDRU32(item.Destination)
+		if err != nil {
+			return nil, err
+		}
+
 		rules = append(rules, r)
 	}
 
