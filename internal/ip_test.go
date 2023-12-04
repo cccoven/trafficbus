@@ -1,4 +1,4 @@
-package trafficbus
+package internal
 
 import (
 	"fmt"

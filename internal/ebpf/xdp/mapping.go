@@ -2,6 +2,7 @@ package xdp
 
 import (
 	"github.com/cccoven/trafficbus"
+	"github.com/cccoven/trafficbus/internal"
 )
 
 var (
@@ -30,12 +31,12 @@ func ConvertToXdpRule(ori []trafficbus.Rule) ([]bpfXdpRule, error) {
 			Protocol: uint32(ProtocolMap[item.Protocol]),
 		}
 
-		r.Source, r.SourceMask, err = trafficbus.ParseV4CIDRU32(item.Source)
+		r.Source, r.SourceMask, err = internal.ParseV4CIDRU32(item.Source)
 		if err != nil {
 			return nil, err
 		}
 
-		r.Destination, r.DestinationMask, err = trafficbus.ParseV4CIDRU32(item.Destination)
+		r.Destination, r.DestinationMask, err = internal.ParseV4CIDRU32(item.Destination)
 		if err != nil {
 			return nil, err
 		}
