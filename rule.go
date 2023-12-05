@@ -2,7 +2,6 @@ package trafficbus
 
 import (
 	"encoding/json"
-	"log"
 	"os"
 )
 
@@ -19,17 +18,17 @@ type RuleSet struct {
 	Rules []Rule `json:"rules"`
 }
 
-func LoadRuleSetFromJSON(f string) []RuleSet {
+func LoadRuleSetFromJSON(f string) ([]RuleSet, error) {
 	data, err := os.ReadFile(f)
 	if err != nil {
-		log.Fatal("failed to read rule file: ", err.Error())
+		return nil, err
 	}
 
 	var rs []RuleSet
 	err = json.Unmarshal(data, &rs)
 	if err != nil {
-		log.Fatal("failed to load rule data: ", err.Error())
+		return nil, err
 	}
 
-	return rs;
+	return rs, nil
 }

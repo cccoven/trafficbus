@@ -70,3 +70,9 @@ static void *(*bpf_ringbuf_reserve)(void *ringbuf, __u64 size, __u64 flags) = (v
 static void (*bpf_ringbuf_submit)(void *data, __u64 flags) = (void *) 132;
 
 static long (*bpf_for_each_map_elem)(void *map, void *callback_fn, void *callback_ctx, __u64 flags) = (void *) 164;
+
+#define __bpf_printk(fmt, ...)									\
+({																\
+	const char ____fmt[] = fmt;									\
+	bpf_trace_printk(____fmt, sizeof(____fmt), ##__VA_ARGS__);	\
+})																\

@@ -37,80 +37,103 @@ struct {
     __type(value, struct xdp_rule);
 } xdp_rule_map SEC(".maps");
 
-
 struct callback_ctx {
+    struct xdp_md *xdp_data;
     __u32 action;
 };
 
+struct cursor {
+    void *pos;
+};
+
+static __always_inline int parse_ethhdr(struct cursor *cur, void *data_end, struct ethhdr **eth) {
+    struct ethhdr *__eth = cur->pos;
+    if ((void *)(__eth + 1) > data_end) {
+        return 0;
+    }
+    int ethhdr_size = sizeof(*__eth);
+    *eth = __eth;
+    cur->pos += ethhdr_size;
+    return 1;
+}
+
+static __always_inline int parse_iphdr(struct cursor *cur, void *data_end, struct iphdr **ip) {
+    struct iphdr *__ip = cur->pos;
+    if ((void *)(__ip + 1) > data_end) {
+        return 0;
+    }
+    int iphdr_size = __ip->ihl * 4;
+    *ip = __ip;
+    cur->pos += iphdr_size;
+    return 1;
+}
+
+static __always_inline int parse_tcphdr(struct cursor *cur, void *data_end, struct tcphdr **tcp) {
+    struct tcphdr *__tcp = cur->pos;
+    if ((void *)(__tcp + 1) > data_end) {
+        return 0;
+    }
+    int tcphdr_size = __tcp->doff * 4;
+    *tcp = __tcp;
+    cur->pos += tcphdr_size;
+    return 1;
+}
+
+static __u32 __always_inline match_tcp(const struct tcphdr *tcp, const struct xdp_rule *rule) {
+    __bpf_printk("data_offset: %d, rule_ip: %d, pkt_ip: %d\n", tcp->doff, rule->source, tcp->source);
+    return XDP_PASS;
+}
+
 static __u64 callback_fn(void *map, __u32 *key, struct xdp_rule *value, struct callback_ctx *ctx) {
-    // const char info[] = "idx: %d, source: %d,  dst: %d\n";
-    // bpf_trace_printk(info, sizeof(info), *key, value->source, value->destination);
+    void *data = (void *)(long)ctx->xdp_data->data;
+    void *data_end = (void *)(long)ctx->xdp_data->data_end;
+    struct cursor cur = { .pos = data };
 
-    if (*key == 0) {
-        ctx->action = value->target;
-
-        // end loop
+    struct ethhdr *eth;
+    if (!parse_ethhdr(&cur, data_end, &eth)) {
         return 1;
+    }
+
+    // make sure it's IPv4
+    if (eth->h_proto != bpf_ntohs(ETH_P_IP)) {
+        return 1;
+    }
+
+    struct iphdr *ip;
+    if (!parse_iphdr(&cur, data_end, &ip)) {
+        return 1;
+    }
+
+    if (value->protocol == IPPROTO_ICMP) {
+        // TODO
+        ctx->action = XDP_PASS;
+        return 1;
+    }
+
+    if (value->protocol == IPPROTO_UDP) {
+        // TODO
+        ctx->action = XDP_PASS;
+        return 1;
+    }
+
+    if (value->protocol == IPPROTO_TCP) {
+        struct tcphdr *tcp;
+        if (!parse_tcphdr(&cur, data_end, &tcp)) {
+            return 1;
+        }
+        match_tcp(tcp, value);
     }
     
     return 0;
 }
 
-// keep track of current parsing position
-struct cursor {
-    void *pos;
-};
-
-static __always_inline int parse_ip(struct xdp_md *ctx, struct iphdr *ip) {
-    void *data = (void *)(long)ctx->data;
-    void *data_end = (void *)(long)ctx->data_end;
-
-    // parse ether header
-    struct ethhdr *eth = data;
-    if ((void *)(eth + 1) > data_end) {
-        return 0;
-    }
-
-    // make sure it's IPv4
-    if (eth->h_proto != bpf_ntohs(ETH_P_IP)) {
-        return 0;
-    }
-
-    // parse IPv4
-    // `eth + 1` is equal to `data + sizeof(*eth)`
-    // struct iphdr *ip = (void *)(eth + 1);
-    // if ((void *)(ip + 1) > data_end) {
-    //     return 0;
-    // }
-
-    return 1;
-
-    // struct tcphdr *tcp = (void *)(ip + 1);
-    // if ((void *)(tcp + 1) > data_end) {
-    //     return 0;
-    // }
-
-    // const char tcpinfo[] = "source: %d, dst: %d\n";
-    // bpf_trace_printk(tcpinfo, sizeof(tcpinfo), tcp->source, tcp->dest);
-
-    return 1;
-}
-
 SEC("xdp")
 int xdp_prod_func(struct xdp_md *ctx) {
-    struct iphdr *ip;
-    if (!parse_ip(ctx, ip)) {
-        goto done;
-    }
-        
     struct callback_ctx cb_ctx = {
+        .xdp_data = ctx,
         .action = XDP_PASS,
     };
     bpf_for_each_map_elem(&xdp_rule_map, callback_fn, &cb_ctx, BPF_ANY);
-
-    // const char debug[] = "rule result: %d\n";
-    // bpf_trace_printk(debug, sizeof(debug), cb_ctx.action);
-
 done:
     return cb_ctx.action;
 }

@@ -16,11 +16,15 @@ var (
 )
 
 func init() {
-	flag.StringVar(&ruleFile, "f", "rule.json", "the rule set file")
+	flag.StringVar(&ruleFile, "f", "", "the rule set file")
+	flag.Parse()
 }
 
 func main() {
-	ruleSet := trafficbus.LoadRuleSetFromJSON(ruleFile)
+	ruleSet, err := trafficbus.LoadRuleSetFromJSON(ruleFile)
+	if err != nil {
+		log.Fatal("failed to load rule file: ", err.Error())
+	}
 
 	for _, rs := range ruleSet {
 		go func(rs trafficbus.RuleSet) {

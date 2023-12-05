@@ -1,6 +1,8 @@
 package xdp
 
 import (
+	"log"
+
 	"github.com/cccoven/trafficbus"
 	"github.com/cccoven/trafficbus/internal"
 )
@@ -8,7 +10,7 @@ import (
 var (
 	TargetMap = map[string]bpfXdpAction{
 		"DROP":     bpfXdpActionXDP_DROP,
-		"PASS":     bpfXdpActionXDP_PASS,
+		"ACCEPT":   bpfXdpActionXDP_PASS,
 		"TX":       bpfXdpActionXDP_TX,
 		"REDIRECT": bpfXdpActionXDP_REDIRECT,
 	}
@@ -40,6 +42,8 @@ func ConvertToXdpRule(ori []trafficbus.Rule) ([]bpfXdpRule, error) {
 		if err != nil {
 			return nil, err
 		}
+
+		log.Printf("rule: %+v\n", r)
 
 		rules = append(rules, r)
 	}
