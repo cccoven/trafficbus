@@ -6,7 +6,7 @@ import (
 )
 
 type Rule struct {
-	Num         int    `json:"num,omitempty"`
+	Num         int    `json:"num"`
 	Target      string `json:"target"`
 	Protocol    string `json:"protocol"`
 	Source      string `json:"source"`

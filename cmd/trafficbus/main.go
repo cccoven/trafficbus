@@ -32,7 +32,7 @@ func main() {
 			if err != nil {
 				log.Printf("iface %s failed to convert rule: %s", rs.IFace, err.Error())
 			}
-			progXDP := xdp.NewXDP(rs.IFace, rules)
+			progXDP := xdp.NewXdp(rs.IFace, rules)
 			progXDP.Run()
 		}(rs)
 	}

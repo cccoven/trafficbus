@@ -68,6 +68,18 @@ static __always_inline int parse_iphdr(struct cursor *cur, void *data_end, struc
     return 1;
 }
 
+static __always_inline int parse_udphdr(struct cursor *cur, void *data_end, struct udphdr **udp) {
+    struct udphdr *__udp = cur->pos;
+    if ((void *)(__udp + 1) > data_end) {
+        return 0;
+    }
+
+    int udphdr_size = __udp->len;
+    *udp = __udp;
+    cur->pos += udphdr_size;
+    return 1;
+}
+
 static __always_inline int parse_tcphdr(struct cursor *cur, void *data_end, struct tcphdr **tcp) {
     struct tcphdr *__tcp = cur->pos;
     if ((void *)(__tcp + 1) > data_end) {
@@ -79,12 +91,27 @@ static __always_inline int parse_tcphdr(struct cursor *cur, void *data_end, stru
     return 1;
 }
 
-static __u32 __always_inline match_tcp(const struct tcphdr *tcp, const struct xdp_rule *rule) {
-    __bpf_printk("data_offset: %d, rule_ip: %d, pkt_ip: %d\n", tcp->doff, rule->source, tcp->source);
+static __u32 __always_inline match_udp(struct udphdr *udp, struct xdp_rule *rule) {
+    __bpf_printk("udp dst bpf_ntohs: %d", bpf_ntohs(udp->dest));
+    __bpf_printk("udp dst bpf_ntohl: %d", bpf_ntohl(udp->dest));
+    __bpf_printk("udp dst bpf_htons: %d", bpf_htons(udp->dest));
+    __bpf_printk("udp dst bpf_htonl: %d", bpf_htonl(udp->dest));
+
+    __bpf_printk("udp src bpf_ntohs: %d", bpf_ntohs(udp->source));
+    __bpf_printk("udp src bpf_ntohl: %d", bpf_ntohl(udp->source));
+    __bpf_printk("udp src bpf_htons: %d", bpf_htons(udp->source));
+    __bpf_printk("udp src bpf_htonl: %d", bpf_htonl(udp->source));
+
+    __bpf_printk("udp src ___bpf_swab16: %d", ___bpf_swab16(udp->source));
     return XDP_PASS;
 }
 
-static __u64 callback_fn(void *map, __u32 *key, struct xdp_rule *value, struct callback_ctx *ctx) {
+static __u32 __always_inline match_tcp(struct tcphdr *tcp, struct xdp_rule *rule) {
+    // __bpf_printk("rule_dstip: %d, pkt_dstip: %d\n", rule->destination, tcp->dest);
+    return XDP_PASS;
+}
+
+static __u64 callback_fn(void *map, __u32 *key, struct xdp_rule *rule, struct callback_ctx *ctx) {
     void *data = (void *)(long)ctx->xdp_data->data;
     void *data_end = (void *)(long)ctx->xdp_data->data_end;
     struct cursor cur = { .pos = data };
@@ -104,24 +131,36 @@ static __u64 callback_fn(void *map, __u32 *key, struct xdp_rule *value, struct c
         return 1;
     }
 
-    if (value->protocol == IPPROTO_ICMP) {
+    // __bpf_printk("rule protocol: %d", rule->protocol == IPPROTO_UDP);
+    // return 0;
+
+    if (rule->protocol == IPPROTO_ICMP) {
+        // __bpf_printk("match ICMP");
         // TODO
         ctx->action = XDP_PASS;
-        return 1;
+        return 0;
     }
-
-    if (value->protocol == IPPROTO_UDP) {
-        // TODO
-        ctx->action = XDP_PASS;
-        return 1;
-    }
-
-    if (value->protocol == IPPROTO_TCP) {
-        struct tcphdr *tcp;
-        if (!parse_tcphdr(&cur, data_end, &tcp)) {
-            return 1;
+ 
+    if (rule->protocol == IPPROTO_UDP) {
+        __bpf_printk("match UDP");
+        struct udphdr *udp;
+        if (!parse_udphdr(&cur, data_end, &udp)) {
+            return 0;
         }
-        match_tcp(tcp, value);
+
+        match_udp(udp, rule);
+        ctx->action = XDP_PASS;
+        return 1;
+    }
+
+    if (rule->protocol == IPPROTO_TCP) {
+        // __bpf_printk("match TCP");
+        // struct tcphdr *tcp;
+        // if (!parse_tcphdr(&cur, data_end, &tcp)) {
+        //     return 1;
+        // }
+        // ctx->action = match_tcp(tcp, rule);
+        return 0;
     }
     
     return 0;

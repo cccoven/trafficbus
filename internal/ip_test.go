@@ -11,7 +11,7 @@ func TestParseV4CIDRU32(t *testing.T) {
 		"192.168.0.1/24",
 		"0.0.0.0/0",
 		"123.123.123.123/8",
-		"1.1.",
+		"1.1.1.1",
 	}
 	for _, ip := range ips {
 		i, m, err := ParseV4CIDRU32(ip)
