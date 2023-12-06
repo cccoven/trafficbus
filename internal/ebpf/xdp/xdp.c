@@ -91,18 +91,27 @@ static __always_inline int parse_tcphdr(struct cursor *cur, void *data_end, stru
     return 1;
 }
 
+static __u32 __always_inline match_ip(struct iphdr *ip, struct xdp_rule *rule) {
+    __u32 saddr = bpf_ntohl(ip->saddr);
+    __u32 daddr = bpf_ntohl(ip->daddr);
+
+    __bpf_printk("saddr: %d\tdaddr: %d", saddr, daddr);
+    __bpf_printk("rule saddr: %d\trule daddr: %d", rule->source, rule->destination);
+
+    if (rule->source != 0 && saddr != rule->source)  { 
+        // source not match
+        return 0;
+    }
+
+    if (rule->destination != 0 && daddr != rule->destination) {
+        // dst not match
+        return 0;
+    }
+
+    return XDP_PASS;
+}
+
 static __u32 __always_inline match_udp(struct udphdr *udp, struct xdp_rule *rule) {
-    __bpf_printk("udp dst bpf_ntohs: %d", bpf_ntohs(udp->dest));
-    __bpf_printk("udp dst bpf_ntohl: %d", bpf_ntohl(udp->dest));
-    __bpf_printk("udp dst bpf_htons: %d", bpf_htons(udp->dest));
-    __bpf_printk("udp dst bpf_htonl: %d", bpf_htonl(udp->dest));
-
-    __bpf_printk("udp src bpf_ntohs: %d", bpf_ntohs(udp->source));
-    __bpf_printk("udp src bpf_ntohl: %d", bpf_ntohl(udp->source));
-    __bpf_printk("udp src bpf_htons: %d", bpf_htons(udp->source));
-    __bpf_printk("udp src bpf_htonl: %d", bpf_htonl(udp->source));
-
-    __bpf_printk("udp src ___bpf_swab16: %d", ___bpf_swab16(udp->source));
     return XDP_PASS;
 }
 
@@ -130,6 +139,10 @@ static __u64 callback_fn(void *map, __u32 *key, struct xdp_rule *rule, struct ca
     if (!parse_iphdr(&cur, data_end, &ip)) {
         return 1;
     }
+
+    match_ip(ip, rule);
+    ctx->action = XDP_PASS;
+    return 1;
 
     // __bpf_printk("rule protocol: %d", rule->protocol == IPPROTO_UDP);
     // return 0;

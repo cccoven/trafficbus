@@ -12,10 +12,11 @@ func TestParseV4CIDRU32(t *testing.T) {
 		"0.0.0.0/0",
 		"123.123.123.123/8",
 		"1.1.1.1",
+		"127.0.0.1",
 	}
 	for _, ip := range ips {
 		i, m, err := ParseV4CIDRU32(ip)
-		fmt.Printf("ip: %d, mask: %d\n", i, m)
+		fmt.Printf("ip: %d,\tmask: %d\n", i, m)
 		if err != nil {
 			t.Error(err.Error())
 		}
