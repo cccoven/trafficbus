@@ -40,6 +40,9 @@ struct {
 struct callback_ctx {
     struct xdp_md *xdp_data;
     struct ethhdr *eth;
+    struct iphdr *ip;
+    struct udphdr *udp;
+    struct tcphdr *tcp;
     __u32 action;
 };
 
@@ -117,48 +120,29 @@ static int __always_inline match_tcp(struct tcphdr *tcp, struct xdp_rule *rule) 
     return 1;
 }
 
+// match rules
 static __u64 callback_fn(void *map, __u32 *key, struct xdp_rule *rule, struct callback_ctx *ctx) {
-    void *data = (void *)(long)ctx->xdp_data->data;
-    void *data_end = (void *)(long)ctx->xdp_data->data_end;
-    struct cursor cur = { .pos = data };
+    if (ctx->ip) {
+        int hitprot = match_protocol(ctx->ip->protocol, rule->protocol);
+        if (!hitprot) {
+            // go to the next rule
+            return 0;
+        }
 
-    // TODO these codes are common and should be moved to ctx
-    struct ethhdr *eth;
-    if (!parse_ethhdr(&cur, data_end, &eth)) {
-        return 1;
-    }
-    // make sure it's IPv4
-    if (eth->h_proto != bpf_ntohs(ETH_P_IP)) {
-        return 1;
-    }
-    struct iphdr *ip;
-    if (!parse_iphdr(&cur, data_end, &ip)) {
-        return 1;
-    }        
-
-    int hitprot = match_protocol(ip->protocol, rule->protocol);
-    if (!hitprot) {
-        // go to the next rule
-        return 0;
-    }
-
-    int hitsip = match_ip(bpf_ntohl(ip->saddr), rule->source, rule->source_mask);
-    int hitdip = match_ip(bpf_ntohl(ip->daddr), rule->destination, rule->destination_mask);
-    if (!hitsip || !hitdip) {
-        return 0;
+        int hitsip = match_ip(bpf_ntohl(ctx->ip->saddr), rule->source, rule->source_mask);
+        int hitdip = match_ip(bpf_ntohl(ctx->ip->daddr), rule->destination, rule->destination_mask);
+        if (!hitsip || !hitdip) {
+            return 0;
+        }
     }
 
     if (rule->protocol == IPPROTO_ICMP) {
         // TODO
         return 0;
     }
- 
-    if (rule->protocol == IPPROTO_UDP) {
-        struct udphdr *udp;
-        if (!parse_udphdr(&cur, data_end, &udp)) {
-            return 1;
-        }
-        int hit = match_udp(udp, rule);
+
+    if (rule->protocol == IPPROTO_UDP && ctx->udp) {
+        int hit = match_udp(ctx->udp, rule);
         __bpf_printk("udp action: %d", rule->target);
         if (hit) {
             ctx->action = rule->target;
@@ -167,12 +151,8 @@ static __u64 callback_fn(void *map, __u32 *key, struct xdp_rule *rule, struct ca
         return 0;
     }
 
-    if (rule->protocol == IPPROTO_TCP) {
-        struct tcphdr *tcp;
-        if (!parse_tcphdr(&cur, data_end, &tcp)) {
-            return 1;
-        }
-        int hit = match_tcp(tcp, rule);
+    if (rule->protocol == IPPROTO_TCP && ctx->tcp) {
+        int hit = match_tcp(ctx->tcp, rule);
         __bpf_printk("tcp action: %d", rule->target);
         if (hit) {
             ctx->action = rule->target;
@@ -180,17 +160,59 @@ static __u64 callback_fn(void *map, __u32 *key, struct xdp_rule *rule, struct ca
         }
         return 0;
     }
-    
+
     return 0;
 }
 
 SEC("xdp")
 int xdp_prod_func(struct xdp_md *ctx) {
-    struct callback_ctx cb_ctx = {
+    void *data = (void *)(long)ctx->data;
+    void *data_end = (void *)(long)ctx->data_end;
+    struct cursor cur = { .pos = data };
+    struct callback_ctx cbstack = {
         .xdp_data = ctx,
         .action = XDP_PASS,
     };
-    bpf_for_each_map_elem(&xdp_rule_map, callback_fn, &cb_ctx, BPF_ANY);
+
+    struct ethhdr *eth;
+    if (!parse_ethhdr(&cur, data_end, &eth)) {
+        return XDP_PASS;
+    }
+    cbstack.eth = eth;
+
+    // make sure it's IPv4
+    if (eth->h_proto != bpf_ntohs(ETH_P_IP)) {
+        return XDP_PASS;
+    }
+
+    struct iphdr *ip;
+    if (!parse_iphdr(&cur, data_end, &ip)) {
+        return XDP_PASS;
+    }
+    cbstack.ip = ip;
+
+    if (ip->protocol == IPPROTO_ICMP) {
+        // TODO
+        return XDP_PASS;
+    }
+ 
+    if (ip->protocol == IPPROTO_UDP) {
+        struct udphdr *udp;
+        if (!parse_udphdr(&cur, data_end, &udp)) {
+            return XDP_PASS;
+        }
+        cbstack.udp = udp;
+    }
+
+    if (ip->protocol == IPPROTO_TCP) {
+        struct tcphdr *tcp;
+        if (!parse_tcphdr(&cur, data_end, &tcp)) {
+            return XDP_PASS;
+        }
+        cbstack.tcp = tcp;
+    }
+
+    bpf_for_each_map_elem(&xdp_rule_map, callback_fn, &cbstack, BPF_ANY);
 done:
-    return cb_ctx.action;
+    return cbstack.action;
 }
