@@ -128,7 +128,7 @@ func echoClientUDP(addr, msg string) {
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 			fmt.Println("timeout:", err.Error())
 		}
-		fmt.Println("rrror receiving:", err.Error())
+		fmt.Println("error receiving:", err.Error())
 		return
 	}
 
@@ -143,7 +143,7 @@ func TestXdp(t *testing.T) {
 	go func() {
 		ticker := time.NewTicker(2 * time.Second)
 		for range ticker.C {
-			// echoClientTCP("127.0.0.1:8080", "hello TCP")
+			echoClientTCP("127.0.0.1:8080", "hello TCP")
 			echoClientUDP("127.0.0.1:8081", "hello UDP")
 		}
 	}()

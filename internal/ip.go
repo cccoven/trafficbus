@@ -10,6 +10,9 @@ import (
 // ParseV4CIDRU32 resolving IPv4 to uint32. 
 // example: ParseV4CIDRU32("192.168.0.1/24") returns (3232235521, 24, nil)
 func ParseV4CIDRU32(addr string) (uip uint32, umask uint32, err error) {
+	if addr == "" {
+		return
+	}
 	var (
 		netIP          net.IP
 		ipNet          *net.IPNet

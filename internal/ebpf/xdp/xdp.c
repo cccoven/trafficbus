@@ -5,7 +5,7 @@
 
 char __license[] SEC("license") = "Dual MIT/GPL";
 
-#define MAX_RULES 2
+#define MAX_RULES 3
 
 enum protocol {
     ICMP = IPPROTO_ICMP,
@@ -39,6 +39,7 @@ struct {
 
 struct callback_ctx {
     struct xdp_md *xdp_data;
+    struct ethhdr *eth;
     __u32 action;
 };
 
@@ -73,7 +74,6 @@ static __always_inline int parse_udphdr(struct cursor *cur, void *data_end, stru
     if ((void *)(__udp + 1) > data_end) {
         return 0;
     }
-
     int udphdr_size = __udp->len;
     *udp = __udp;
     cur->pos += udphdr_size;
@@ -91,33 +91,30 @@ static __always_inline int parse_tcphdr(struct cursor *cur, void *data_end, stru
     return 1;
 }
 
-static __u32 __always_inline match_ip(struct iphdr *ip, struct xdp_rule *rule) {
-    __u32 saddr = bpf_ntohl(ip->saddr);
-    __u32 daddr = bpf_ntohl(ip->daddr);
-
-    __bpf_printk("saddr: %d\tdaddr: %d", saddr, daddr);
-    __bpf_printk("rule saddr: %d\trule daddr: %d", rule->source, rule->destination);
-
-    if (rule->source != 0 && saddr != rule->source)  { 
-        // source not match
-        return 0;
+static int __always_inline match_protocol(__u32 pkt_prot, __u32 rule_prot) {
+    // all protocol
+    if (!rule_prot) {
+        return 1;
     }
-
-    if (rule->destination != 0 && daddr != rule->destination) {
-        // dst not match
-        return 0;
-    }
-
-    return XDP_PASS;
+    return pkt_prot == rule_prot;
 }
 
-static __u32 __always_inline match_udp(struct udphdr *udp, struct xdp_rule *rule) {
-    return XDP_PASS;
+static int __always_inline match_ip(__u32 pktip, __u32 ruleip, __u32 ruleip_mask) {
+    if (!ruleip) {
+        // all address
+        return 1;
+    }
+
+    // TODO CIDR
+    return pktip == ruleip;
 }
 
-static __u32 __always_inline match_tcp(struct tcphdr *tcp, struct xdp_rule *rule) {
-    // __bpf_printk("rule_dstip: %d, pkt_dstip: %d\n", rule->destination, tcp->dest);
-    return XDP_PASS;
+static int __always_inline match_udp(struct udphdr *udp, struct xdp_rule *rule) {
+    return 1;
+}
+
+static int __always_inline match_tcp(struct tcphdr *tcp, struct xdp_rule *rule) {
+    return 1;
 }
 
 static __u64 callback_fn(void *map, __u32 *key, struct xdp_rule *rule, struct callback_ctx *ctx) {
@@ -125,54 +122,62 @@ static __u64 callback_fn(void *map, __u32 *key, struct xdp_rule *rule, struct ca
     void *data_end = (void *)(long)ctx->xdp_data->data_end;
     struct cursor cur = { .pos = data };
 
+    // TODO these codes are common and should be moved to ctx
     struct ethhdr *eth;
     if (!parse_ethhdr(&cur, data_end, &eth)) {
         return 1;
     }
-
     // make sure it's IPv4
     if (eth->h_proto != bpf_ntohs(ETH_P_IP)) {
         return 1;
     }
-
     struct iphdr *ip;
     if (!parse_iphdr(&cur, data_end, &ip)) {
         return 1;
+    }        
+
+    int hitprot = match_protocol(ip->protocol, rule->protocol);
+    if (!hitprot) {
+        // go to the next rule
+        return 0;
     }
 
-    match_ip(ip, rule);
-    ctx->action = XDP_PASS;
-    return 1;
-
-    // __bpf_printk("rule protocol: %d", rule->protocol == IPPROTO_UDP);
-    // return 0;
+    int hitsip = match_ip(bpf_ntohl(ip->saddr), rule->source, rule->source_mask);
+    int hitdip = match_ip(bpf_ntohl(ip->daddr), rule->destination, rule->destination_mask);
+    if (!hitsip || !hitdip) {
+        return 0;
+    }
 
     if (rule->protocol == IPPROTO_ICMP) {
-        // __bpf_printk("match ICMP");
         // TODO
-        ctx->action = XDP_PASS;
         return 0;
     }
  
     if (rule->protocol == IPPROTO_UDP) {
-        __bpf_printk("match UDP");
         struct udphdr *udp;
         if (!parse_udphdr(&cur, data_end, &udp)) {
-            return 0;
+            return 1;
         }
-
-        match_udp(udp, rule);
-        ctx->action = XDP_PASS;
-        return 1;
+        int hit = match_udp(udp, rule);
+        __bpf_printk("udp action: %d", rule->target);
+        if (hit) {
+            ctx->action = rule->target;
+            return 1;
+        }
+        return 0;
     }
 
     if (rule->protocol == IPPROTO_TCP) {
-        // __bpf_printk("match TCP");
-        // struct tcphdr *tcp;
-        // if (!parse_tcphdr(&cur, data_end, &tcp)) {
-        //     return 1;
-        // }
-        // ctx->action = match_tcp(tcp, rule);
+        struct tcphdr *tcp;
+        if (!parse_tcphdr(&cur, data_end, &tcp)) {
+            return 1;
+        }
+        int hit = match_tcp(tcp, rule);
+        __bpf_printk("tcp action: %d", rule->target);
+        if (hit) {
+            ctx->action = rule->target;
+            return 1;
+        }
         return 0;
     }
     

@@ -11,10 +11,17 @@
             },
             {
                 "num": 1,
-                "target": "ACCEPT",
+                "target": "DROP",
                 "protocol": "UDP",
                 "source": "0.0.0.0/0",
                 "destination": "127.0.0.1"
+            },
+            {
+                "num": 2,
+                "target": "DROP",
+                "protocol": "UDP",
+                "source": "127.0.0.1",
+                "destination": "0.0.0.0/0"
             }
         ]
     }
