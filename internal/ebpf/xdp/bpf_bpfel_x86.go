@@ -41,6 +41,19 @@ type bpfXdpRule struct {
 	SourceMask      uint32
 	Destination     uint32
 	DestinationMask uint32
+	UdpExt          struct {
+		Enable int32
+		Sport  uint16
+		Dport  uint16
+	}
+	TcpExt struct {
+		Enable int32
+		Sport  uint16
+		Dport  uint16
+	}
+	MatchExt  struct{ Multiport [65535]uint16 }
+	TargetExt struct{}
+	_         [2]byte
 }
 
 // loadBpf returns the embedded CollectionSpec for bpf.

@@ -13,6 +13,26 @@ enum protocol {
     TCP = IPPROTO_TCP,
 };
 
+// example: -p udp --dport 8080
+struct udp_ext {
+    int enable;
+    u16 sport;
+    u16 dport;
+};
+
+struct tcp_ext {
+    int enable;
+    u16 sport;
+    u16 dport;
+};
+
+// example: -m comment --comment "foo"
+struct match_ext {
+    u16 multiport[65535];
+};
+
+struct target_ext {};
+
 // common rule
 struct xdp_rule {
     u32 num;
@@ -24,6 +44,11 @@ struct xdp_rule {
     u32 source_mask;
     u32 destination;
     u32 destination_mask;
+
+    struct udp_ext udp_ext;
+    struct tcp_ext tcp_ext;
+    struct match_ext match_ext;
+    struct target_ext target_ext;
 };
 
 // Force emitting enum xdp_action into the ELF.
@@ -113,6 +138,9 @@ static int __always_inline match_ip(__u32 pktip, __u32 ruleip, __u32 ruleip_mask
 }
 
 static int __always_inline match_udp(struct udphdr *udp, struct xdp_rule *rule) {
+    if (rule->udp_ext.enable) {
+        
+    }
     return 1;
 }
 
@@ -153,7 +181,7 @@ static __u64 callback_fn(void *map, __u32 *key, struct xdp_rule *rule, struct ca
 
     if (rule->protocol == IPPROTO_TCP && ctx->tcp) {
         int hit = match_tcp(ctx->tcp, rule);
-        __bpf_printk("tcp action: %d", rule->target);
+        // __bpf_printk("tcp action: %d", rule->target);
         if (hit) {
             ctx->action = rule->target;
             return 1;
@@ -176,30 +204,30 @@ int xdp_prod_func(struct xdp_md *ctx) {
 
     struct ethhdr *eth;
     if (!parse_ethhdr(&cur, data_end, &eth)) {
-        return XDP_PASS;
+        goto done;
     }
     cbstack.eth = eth;
 
     // make sure it's IPv4
     if (eth->h_proto != bpf_ntohs(ETH_P_IP)) {
-        return XDP_PASS;
+        goto done;
     }
 
     struct iphdr *ip;
     if (!parse_iphdr(&cur, data_end, &ip)) {
-        return XDP_PASS;
+        goto done;
     }
     cbstack.ip = ip;
 
     if (ip->protocol == IPPROTO_ICMP) {
         // TODO
-        return XDP_PASS;
+        goto done;
     }
  
     if (ip->protocol == IPPROTO_UDP) {
         struct udphdr *udp;
         if (!parse_udphdr(&cur, data_end, &udp)) {
-            return XDP_PASS;
+            goto done;
         }
         cbstack.udp = udp;
     }
@@ -207,12 +235,13 @@ int xdp_prod_func(struct xdp_md *ctx) {
     if (ip->protocol == IPPROTO_TCP) {
         struct tcphdr *tcp;
         if (!parse_tcphdr(&cur, data_end, &tcp)) {
-            return XDP_PASS;
+            goto done;
         }
         cbstack.tcp = tcp;
     }
 
     bpf_for_each_map_elem(&xdp_rule_map, callback_fn, &cbstack, BPF_ANY);
+
 done:
     return cbstack.action;
 }

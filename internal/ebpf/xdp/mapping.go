@@ -1,8 +1,6 @@
 package xdp
 
 import (
-	"log"
-
 	"github.com/cccoven/trafficbus"
 	"github.com/cccoven/trafficbus/internal"
 )
@@ -43,7 +41,11 @@ func ConvertToXdpRule(ori []trafficbus.Rule) ([]bpfXdpRule, error) {
 			return nil, err
 		}
 
-		log.Printf("rule: %+v\n", r)
+		if item.UDPExt != nil {
+			r.UdpExt.Enable = 1
+			r.UdpExt.Sport = uint16(item.UDPExt.SrcPort)
+			r.UdpExt.Dport = uint16(item.UDPExt.DstPort)
+		}
 
 		rules = append(rules, r)
 	}

@@ -26,6 +26,8 @@ func main() {
 		log.Fatal("failed to load rule file: ", err.Error())
 	}
 
+	// TODO all interface
+
 	for _, rs := range ruleSet {
 		go func(rs trafficbus.RuleSet) {
 			rules, err := xdp.ConvertToXdpRule(rs.Rules)

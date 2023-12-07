@@ -5,12 +5,18 @@ import (
 	"os"
 )
 
+type UDPExt struct {
+	SrcPort int `json:"sport"`
+	DstPort int `json:"dport"`
+}
+
 type Rule struct {
-	Num         int    `json:"num"`
-	Target      string `json:"target"`
-	Protocol    string `json:"protocol"`
-	Source      string `json:"source"`
-	Destination string `json:"destination"`
+	Num         int     `json:"num"`
+	Target      string  `json:"target"`
+	Protocol    string  `json:"protocol"`
+	Source      string  `json:"source"`
+	Destination string  `json:"destination"`
+	UDPExt      *UDPExt `json:"udp_ext,omitempty"`
 }
 
 type RuleSet struct {

@@ -14,7 +14,10 @@
                 "target": "DROP",
                 "protocol": "UDP",
                 "source": "0.0.0.0/0",
-                "destination": "127.0.0.1"
+                "destination": "127.0.0.1",
+                "udp_ext": {
+                    "dport": 8081
+                }
             },
             {
                 "num": 2,
