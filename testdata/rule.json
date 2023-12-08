@@ -4,27 +4,27 @@
         "rules": [
             {
                 "num": 0,
-                "target": "ACCEPT",
+                "target": "DROP",
                 "protocol": "TCP",
                 "source": "0.0.0.0/0",
-                "destination": "127.0.0.1"
-            },
-            {
-                "num": 1,
-                "target": "DROP",
-                "protocol": "UDP",
-                "source": "0.0.0.0/0",
                 "destination": "127.0.0.1",
-                "udp_ext": {
-                    "dport": 8081
+                "match_extension": {
+                    "tcp": {
+                        "src_port": 8080
+                    }
                 }
             },
             {
-                "num": 2,
-                "target": "DROP",
+                "num": 1,
+                "target": "ACCEPT",
                 "protocol": "UDP",
-                "source": "127.0.0.1",
-                "destination": "0.0.0.0/0"
+                "source": "0.0.0.0/0",
+                "destination": "127.0.0.1",
+                "match_extension": {
+                    "udp": {
+                        "src_port": 8081
+                    }
+                }
             }
         ]
     }

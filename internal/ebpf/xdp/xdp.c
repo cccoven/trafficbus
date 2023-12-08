@@ -28,6 +28,9 @@ struct tcp_ext {
 
 // example: -m comment --comment "foo"
 struct match_ext {
+    int enable;
+    struct udp_ext udp;
+    struct tcp_ext tcp;
     u16 multiport[65535];
 };
 
@@ -45,8 +48,6 @@ struct xdp_rule {
     u32 destination;
     u32 destination_mask;
 
-    struct udp_ext udp_ext;
-    struct tcp_ext tcp_ext;
     struct match_ext match_ext;
     struct target_ext target_ext;
 };
@@ -138,18 +139,37 @@ static int __always_inline match_ip(__u32 pktip, __u32 ruleip, __u32 ruleip_mask
 }
 
 static int __always_inline match_udp(struct udphdr *udp, struct xdp_rule *rule) {
-    if (rule->udp_ext.enable) {
-        
+    struct udp_ext udpext = rule->match_ext.udp;
+    if (!udpext.enable) {
+        return 1;
     }
+    if (udpext.sport && bpf_ntohs(udp->source) != udpext.sport) {
+        return 0;
+    }
+    if (udpext.dport && bpf_ntohs(udp->dest) != udpext.dport) {
+        return 0;
+    }
+
     return 1;
 }
 
 static int __always_inline match_tcp(struct tcphdr *tcp, struct xdp_rule *rule) {
+    struct tcp_ext tcpext = rule->match_ext.tcp;
+    if (!tcpext.enable) {
+        return 1;
+    };
+    if (tcpext.sport && bpf_ntohs(tcp->source) != tcpext.sport) {
+        return 0;
+    }
+    if (tcpext.dport && bpf_ntohs(tcp->dest) != tcpext.dport) {
+        return 0;
+    }
+
     return 1;
 }
 
 // match rules
-static __u64 callback_fn(void *map, __u32 *key, struct xdp_rule *rule, struct callback_ctx *ctx) {
+static __u64 traverse_rules(void *map, __u32 *key, struct xdp_rule *rule, struct callback_ctx *ctx) {
     if (ctx->ip) {
         int hitprot = match_protocol(ctx->ip->protocol, rule->protocol);
         if (!hitprot) {
@@ -171,9 +191,9 @@ static __u64 callback_fn(void *map, __u32 *key, struct xdp_rule *rule, struct ca
 
     if (rule->protocol == IPPROTO_UDP && ctx->udp) {
         int hit = match_udp(ctx->udp, rule);
-        __bpf_printk("udp action: %d", rule->target);
         if (hit) {
             ctx->action = rule->target;
+            __bpf_printk("matched rule num: %d", rule->num);
             return 1;
         }
         return 0;
@@ -181,9 +201,9 @@ static __u64 callback_fn(void *map, __u32 *key, struct xdp_rule *rule, struct ca
 
     if (rule->protocol == IPPROTO_TCP && ctx->tcp) {
         int hit = match_tcp(ctx->tcp, rule);
-        // __bpf_printk("tcp action: %d", rule->target);
         if (hit) {
             ctx->action = rule->target;
+            __bpf_printk("matched rule num: %d", rule->num);
             return 1;
         }
         return 0;
@@ -240,7 +260,7 @@ int xdp_prod_func(struct xdp_md *ctx) {
         cbstack.tcp = tcp;
     }
 
-    bpf_for_each_map_elem(&xdp_rule_map, callback_fn, &cbstack, BPF_ANY);
+    bpf_for_each_map_elem(&xdp_rule_map, traverse_rules, &cbstack, BPF_ANY);
 
 done:
     return cbstack.action;

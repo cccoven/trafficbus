@@ -143,8 +143,8 @@ func TestXdp(t *testing.T) {
 	go func() {
 		ticker := time.NewTicker(2 * time.Second)
 		for range ticker.C {
-			echoClientTCP("127.0.0.1:8080", "hello TCP")
-			echoClientUDP("127.0.0.1:8081", "hello UDP")
+			go echoClientTCP("127.0.0.1:8080", "hello TCP")
+			go echoClientUDP("127.0.0.1:8081", "hello UDP")
 		}
 	}()
 

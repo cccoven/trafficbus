@@ -41,10 +41,18 @@ func ConvertToXdpRule(ori []trafficbus.Rule) ([]bpfXdpRule, error) {
 			return nil, err
 		}
 
-		if item.UDPExt != nil {
-			r.UdpExt.Enable = 1
-			r.UdpExt.Sport = uint16(item.UDPExt.SrcPort)
-			r.UdpExt.Dport = uint16(item.UDPExt.DstPort)
+		if item.MatchExtension != nil {
+			r.MatchExt.Enable = 1
+			if item.MatchExtension.UDP != nil {
+				r.MatchExt.Udp.Enable = 1
+				r.MatchExt.Udp.Sport = uint16(item.MatchExtension.UDP.SrcPort)
+				r.MatchExt.Udp.Dport = uint16(item.MatchExtension.UDP.DstPort)
+			}
+			if item.MatchExtension.TCP != nil {
+				r.MatchExt.Tcp.Enable = 1
+				r.MatchExt.Tcp.Sport = uint16(item.MatchExtension.TCP.SrcPort)
+				r.MatchExt.Tcp.Dport = uint16(item.MatchExtension.TCP.DstPort)
+			}
 		}
 
 		rules = append(rules, r)
