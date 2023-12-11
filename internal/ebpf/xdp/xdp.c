@@ -129,12 +129,15 @@ static int __always_inline match_protocol(__u32 pkt_prot, __u32 rule_prot) {
 }
 
 static int __always_inline match_ip(__u32 pktip, __u32 ruleip, __u32 ruleip_mask) {
-    if (!ruleip) {
+    if (!ruleip) { 
         // all address
         return 1;
     }
 
-    // TODO CIDR
+    // match CIDR
+    if (ruleip_mask) {
+        
+    }
     return pktip == ruleip;
 }
 
@@ -143,10 +146,10 @@ static int __always_inline match_udp(struct udphdr *udp, struct xdp_rule *rule) 
     if (!udpext.enable) {
         return 1;
     }
-    if (udpext.sport && bpf_ntohs(udp->source) != udpext.sport) {
+    if (udpext.sport && bpf_htons(udp->source) != udpext.sport) {
         return 0;
     }
-    if (udpext.dport && bpf_ntohs(udp->dest) != udpext.dport) {
+    if (udpext.dport && bpf_htons(udp->dest) != udpext.dport) {
         return 0;
     }
 
@@ -158,10 +161,10 @@ static int __always_inline match_tcp(struct tcphdr *tcp, struct xdp_rule *rule) 
     if (!tcpext.enable) {
         return 1;
     };
-    if (tcpext.sport && bpf_ntohs(tcp->source) != tcpext.sport) {
+    if (tcpext.sport && bpf_htons(tcp->source) != tcpext.sport) {
         return 0;
     }
-    if (tcpext.dport && bpf_ntohs(tcp->dest) != tcpext.dport) {
+    if (tcpext.dport && bpf_htons(tcp->dest) != tcpext.dport) {
         return 0;
     }
 
@@ -177,8 +180,8 @@ static __u64 traverse_rules(void *map, __u32 *key, struct xdp_rule *rule, struct
             return 0;
         }
 
-        int hitsip = match_ip(bpf_ntohl(ctx->ip->saddr), rule->source, rule->source_mask);
-        int hitdip = match_ip(bpf_ntohl(ctx->ip->daddr), rule->destination, rule->destination_mask);
+        int hitsip = match_ip(bpf_htonl(ctx->ip->saddr), rule->source, rule->source_mask);
+        int hitdip = match_ip(bpf_htonl(ctx->ip->daddr), rule->destination, rule->destination_mask);
         if (!hitsip || !hitdip) {
             return 0;
         }

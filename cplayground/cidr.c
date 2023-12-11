@@ -79,7 +79,7 @@ int isSubnet(const char *net_addr, const char *ip_addr) {
     // 00000000.11111111.11111111.11111111
     // =
     // 00000000.00000011.01010001.10000000
-    uint32_t a = network & mask;
+    uint32_t a = (network & mask);
 
     // 192.168.1.1 & 255.255.255.0
     // 00000010.00000011.01010001.10000000
@@ -92,16 +92,12 @@ int isSubnet(const char *net_addr, const char *ip_addr) {
     // 00000000.11111111.11111111.11111111
     // =
     // 00000000.00001010.10101000.11000000
-    uint32_t b = ia & mask;
+    uint32_t b = (ia & mask);
 
     printf("network & mask: %x\n", a);
     printf("ip & mask: %x\n", b);
 
-    if (a == b) {
-        return 1;
-    }
-
-    return -1;
+    return a == b;
 }
 
 
@@ -113,10 +109,68 @@ void subnetMaskFromPrefix(int prefixLength, char* mask) {
     strcpy(mask, inet_ntoa(addr));
 }
 
+int isSubnet2(const char *net_addr, const char *ip_addr) {
+    char *net = getNet(net_addr); // 192.168.1.0
+    int netbit = getPrefix(net_addr); // 24
+
+    uint32_t prefix = (32 - netbit);
+    uint32_t bits = 0xffffffff << prefix;
+    uint32_t maskip = ntohl(bits);
+    uint32_t netip = inet_addr(net);
+    uint32_t ip = inet_addr(ip_addr);
+    printf("maskip: %x, netip: %x, ip: %x\n", maskip, netip, ip);
+
+    uint32_t a = netip & maskip;
+    uint32_t b = ip & maskip;
+    printf("a: %x, b: %x\n", a, b);
+
+    return a == b;
+}
+
+int isSubnet3(uint32_t netip, uint32_t mask, uint32_t ip) {
+    uint32_t prefix = (32 - mask);
+    uint32_t bits = (0xffffffff << prefix);
+    printf("bits: %x\n", bits);
+
+    // uint32_t maskip = htonl(bits);
+    // printf("maskip: %x, netip: %x, ip: %x\n", maskip, netip >> prefix, ip >> prefix);
+    // printf("maskip: %u, netip: %u, ip: %u\n", maskip, netip >> prefix, ip >> prefix);
+
+    // uint32_t a = (netip >> prefix) & maskip;
+    // uint32_t b = (ip >> prefix) & maskip;
+    // printf("a: %x, b: %x\n", a, b);
+
+    uint32_t maskip = htonl(bits) << prefix;
+    printf("maskip: %x, netip: %x, ip: %x\n", maskip, netip, ip);
+    printf("maskip: %u, netip: %u, ip: %u\n", maskip, netip, ip);
+
+    uint32_t a = netip & maskip;
+    uint32_t b = ip & maskip;
+    printf("a: %x, b: %x\n", a, b);
+
+    return a == b;
+}
+
+int isSubnet4(const char *net_addr, const char *ip_addr) {
+    char *net = getNet(net_addr); // 192.168.1.0
+    int netbit = getPrefix(net_addr); // 24
+
+    struct in_addr netaddr;
+    inet_pton(AF_INET, net, &netaddr);
+    uint32_t netip = htonl(netaddr.s_addr);
+
+    struct in_addr ipaddr;
+    inet_pton(AF_INET, ip_addr, &ipaddr);
+    uint32_t ip = htonl(ipaddr.s_addr);
+
+    return isSubnet3(netip, netbit, ip);
+}
+
+
 int main() {
     char *net_addr = "192.168.1.0/24";
-    const char *ip_addr = "192.168.1.1";
-    int rv = isSubnet(net_addr, ip_addr);
-    printf("isSubnet: %d\n", rv);
+    const char *ip_addr = "192.168.1.100";
+    int rv = isSubnet4(net_addr, ip_addr);
+    printf("isSubnet: %u\n", rv);
     return 0;
 }

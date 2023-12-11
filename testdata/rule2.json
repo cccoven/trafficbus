@@ -1,0 +1,19 @@
+[
+    {
+        "iface": "ens3",
+        "rules": [
+            {
+                "num": 0,
+                "target": "ACCEPT",
+                "protocol": "TCP",
+                "source": "192.168.12.1",
+                "destination": "0.0.0.0/0",
+                "match_extension": {
+                    "tcp": {
+                        "dst_port": 22
+                    }
+                }
+            }
+        ]
+    }
+]
