@@ -145,8 +145,9 @@ static int __always_inline match_ip(__u32 pktip, __u32 ruleip, __u32 ruleip_mask
 
     // match CIDR
     if (ruleip_mask) {
-
+        return (ruleip & ruleip_mask) == (pktip & ruleip_mask);
     }
+
     return pktip == ruleip;
 }
 
@@ -182,6 +183,7 @@ static int __always_inline match_tcp(struct tcphdr *tcp, struct xdp_rule *rule) 
 
 // match rules
 static __u64 traverse_rules(void *map, __u32 *key, struct xdp_rule *rule, struct callback_ctx *ctx) {
+    __bpf_printk("key: %d", key);
     if (ctx->ip) {
         int hitprot = match_protocol(ctx->ip->protocol, rule->protocol);
         if (!hitprot) {
@@ -196,32 +198,57 @@ static __u64 traverse_rules(void *map, __u32 *key, struct xdp_rule *rule, struct
         }
     }
 
-    if (rule->protocol == IPPROTO_ICMP) {
-        // TODO
-        return 0;
+    int hit = 0;
+    // __bpf_printk("num: %u, target: %u", rule->num, rule->target);
+    switch (rule->protocol) {
+        case IPPROTO_ICMP:
+            // TODO
+            break;
+        case IPPROTO_UDP:
+            if (ctx->udp && (hit = match_udp(ctx->udp, rule))) {
+                ctx->action = rule->target;
+                __bpf_printk("matched rule num: %d", rule->num);
+            }
+            break;
+        case IPPROTO_TCP:
+            if (ctx->tcp && (hit = match_tcp(ctx->tcp, rule))) {
+                ctx->action = rule->target;
+                __bpf_printk("matched rule num: %d", rule->num);
+            }
+            break;
+        default:
+            // sport empty rule
+            // ctx->action = rule->target;
+            // hit = 1;
+            break;
     }
+    return hit;
 
-    if (rule->protocol == IPPROTO_UDP && ctx->udp) {
-        int hit = match_udp(ctx->udp, rule);
-        if (hit) {
-            ctx->action = rule->target;
-            __bpf_printk("matched rule num: %d", rule->num);
-            return 1;
-        }
-        return 0;
-    }
+    // if (rule->protocol == IPPROTO_ICMP) {
+    //     // TODO
+    //     return 0;
+    // }
 
-    if (rule->protocol == IPPROTO_TCP && ctx->tcp) {
-        int hit = match_tcp(ctx->tcp, rule);
-        if (hit) {
-            ctx->action = rule->target;
-            __bpf_printk("matched rule num: %d", rule->num);
-            return 1;
-        }
-        return 0;
-    }
+    // if (rule->protocol == IPPROTO_UDP && ctx->udp) {
+    //     int hit = match_udp(ctx->udp, rule);
+    //     if (hit) {
+    //         ctx->action = rule->target;
+    //         __bpf_printk("matched rule num: %d", rule->num);
+    //         return 1;
+    //     }
+    //     return 0;
+    // }
 
-    return 0;
+    // if (rule->protocol == IPPROTO_TCP && ctx->tcp) {
+    //     int hit = match_tcp(ctx->tcp, rule);
+    //     if (hit) {
+    //         ctx->action = rule->target;
+    //         __bpf_printk("matched rule num: %d", rule->num);
+    //         return 1;
+    //     }
+    //     return 0;
+    // }
+    // return 0;
 }
 
 SEC("xdp")

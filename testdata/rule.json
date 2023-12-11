@@ -3,20 +3,19 @@
         "iface": "lo",
         "rules": [
             {
-                "num": 1,
-                "target": "DROP",
+                "num": 0,
+                "target": "ACCEPT",
                 "protocol": "TCP",
                 "source": "0.0.0.0/0",
-                "destination": "127.0.0.1",
+                "destination": "127.0.0.1/8",
                 "match_extension": {
                     "tcp": {
-                        "src_port": 8080,
                         "dst_port": 8080
                     }
                 }
             },
             {
-                "num": 2,
+                "num": 1,
                 "target": "ACCEPT",
                 "protocol": "UDP",
                 "source": "0.0.0.0/0",
