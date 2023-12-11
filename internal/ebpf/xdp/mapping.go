@@ -6,11 +6,12 @@ import (
 )
 
 var (
-	TargetMap = map[string]bpfXdpAction{
-		"DROP":     bpfXdpActionXDP_DROP,
-		"ACCEPT":   bpfXdpActionXDP_PASS,
-		"TX":       bpfXdpActionXDP_TX,
-		"REDIRECT": bpfXdpActionXDP_REDIRECT,
+	TargetMap = map[string]bpfTarget{
+		"DROP":    bpfTargetDROP,
+		"ACCEPT":  bpfTargetACCEPT,
+		"TX":      bpfTargetTX,
+		"FORWARD": bpfTargetFORWARD,
+		"LOG":     bpfTargetLOG,
 	}
 
 	ProtocolMap = map[string]bpfProtocol{

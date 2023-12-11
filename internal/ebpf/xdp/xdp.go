@@ -9,7 +9,7 @@ import (
 	"github.com/cilium/ebpf/link"
 )
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type xdp_action -type protocol -target amd64 bpf xdp.c -- -I../include
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -target amd64 bpf xdp.c -- -I../include
 
 type Xdp struct {
 	iface string

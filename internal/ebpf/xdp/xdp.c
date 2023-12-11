@@ -7,6 +7,15 @@ char __license[] SEC("license") = "Dual MIT/GPL";
 
 #define MAX_RULES 3
 
+enum target {
+    ABORTED = XDP_ABORTED,
+    DROP = XDP_DROP,
+    ACCEPT = XDP_PASS,
+    TX = XDP_TX,
+    FORWARD = XDP_REDIRECT,
+    LOG,
+};
+
 enum protocol {
     ICMP = IPPROTO_ICMP,
     UDP = IPPROTO_UDP,
@@ -53,7 +62,7 @@ struct xdp_rule {
 };
 
 // Force emitting enum xdp_action into the ELF.
-const enum xdp_action *action __attribute__((unused));
+const enum target *action __attribute__((unused));
 const enum protocol *prot __attribute__((unused));
 
 struct {
@@ -136,7 +145,7 @@ static int __always_inline match_ip(__u32 pktip, __u32 ruleip, __u32 ruleip_mask
 
     // match CIDR
     if (ruleip_mask) {
-        
+
     }
     return pktip == ruleip;
 }

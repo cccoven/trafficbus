@@ -20,14 +20,15 @@ const (
 	bpfProtocolTCP  bpfProtocol = 6
 )
 
-type bpfXdpAction uint32
+type bpfTarget uint32
 
 const (
-	bpfXdpActionXDP_ABORTED  bpfXdpAction = 0
-	bpfXdpActionXDP_DROP     bpfXdpAction = 1
-	bpfXdpActionXDP_PASS     bpfXdpAction = 2
-	bpfXdpActionXDP_TX       bpfXdpAction = 3
-	bpfXdpActionXDP_REDIRECT bpfXdpAction = 4
+	bpfTargetABORTED bpfTarget = 0
+	bpfTargetDROP    bpfTarget = 1
+	bpfTargetACCEPT  bpfTarget = 2
+	bpfTargetTX      bpfTarget = 3
+	bpfTargetFORWARD bpfTarget = 4
+	bpfTargetLOG     bpfTarget = 5
 )
 
 type bpfXdpRule struct {

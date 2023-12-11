@@ -135,7 +135,7 @@ func echoClientUDP(addr, msg string) {
 	fmt.Println("UDP response from server:", string(buffer[:n]))
 }
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type xdp_action -type protocol -target amd64 bpf xdp.c -- -I../include
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -target amd64 bpf xdp.c -- -I../include
 func TestXdp(t *testing.T) {
 	go echoServerTCP("127.0.0.1:8080")
 	go echoServerUDP("127.0.0.1:8081")
