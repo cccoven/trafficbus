@@ -42,7 +42,7 @@ func ParseV4CIDRU32(addr string) (uip uint32, umask uint32, err error) {
 			bits := uint32(0xffffffff << (32 - maskSize))
 			buf := make([]byte, 4)
 			binary.BigEndian.PutUint32(buf, bits)
-			umask = uint32(binary.BigEndian.Uint32(buf))
+			umask = binary.BigEndian.Uint32(buf)
 		}
 	}
 
