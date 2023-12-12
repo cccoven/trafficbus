@@ -27,7 +27,8 @@ func ConvertToXdpRule(ori []trafficbus.Rule) ([]bpfXdpRule, error) {
 
 	for _, item := range ori {
 		r := bpfXdpRule{
-			Num:      uint32(item.Num),
+			Enable:   1,
+			Num:      uint32(item.Num - 1),
 			Target:   uint32(TargetMap[item.Target]),
 			Protocol: uint32(ProtocolMap[item.Protocol]),
 		}

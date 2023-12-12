@@ -3,7 +3,7 @@
         "iface": "enp0s3",
         "rules": [
             {
-                "num": 0,
+                "num": 1,
                 "target": "ACCEPT",
                 "protocol": "TCP",
                 "source": "192.10.1.1/24",

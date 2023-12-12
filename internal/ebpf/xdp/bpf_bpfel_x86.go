@@ -32,8 +32,8 @@ const (
 )
 
 type bpfXdpRule struct {
+	Enable          int32
 	Num             uint32
-	_               [4]byte
 	Pkts            uint64
 	Bytes           uint64
 	Target          uint32
