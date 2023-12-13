@@ -8,7 +8,7 @@ import (
 )
 
 // ParseV4CIDRU32 resolving IPv4 to uint32.
-// For compatibility, all bytes are in network byte order(big endian)
+// For compatibility, all bytes are in network byte order(big endian).
 // example:
 // ParseV4CIDRU32("192.168.0.1/24") returns (3232235521, ffffff00, nil)
 func ParseV4CIDRU32(addr string) (uip uint32, umask uint32, err error) {

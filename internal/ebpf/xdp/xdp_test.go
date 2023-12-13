@@ -35,10 +35,10 @@ func echoServerTCP(addr string) {
 					return
 				}
 
-				fmt.Println("TCP received: ", string(buffer[:n]))
+				fmt.Printf("TCP %s received: %s\n", addr, string(buffer[:n]))
 				_, err = conn.Write(buffer[:n])
 				if err != nil {
-					fmt.Println("error writing: ", err.Error())
+					fmt.Printf("TCP %s error writing: %s\n", addr, err.Error())
 					return
 				}
 			}
@@ -68,10 +68,10 @@ func echoServerUDP(addr string) {
 			return
 		}
 
-		fmt.Println("UDP received: ", string(buffer[:n]))
+		fmt.Printf("UDP received message: addr=%s, msg=%s\n", conn.LocalAddr().String(), string(buffer[:n]))
 		_, err = conn.WriteToUDP(buffer[:n], addr)
 		if err != nil {
-			fmt.Println("error writing: ", err.Error())
+			fmt.Printf("UDP %s error writing: %s\n", addr, err.Error())
 			return
 		}
 	}
@@ -104,13 +104,12 @@ func echoClientTCP(addr, msg string) {
 func echoClientUDP(addr, msg string) {
 	uaddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
-		fmt.Println("Error resolving UDP address:", err.Error())
-		return
+		log.Fatal("Error resolving UDP address:", err.Error())
 	}
 
 	conn, err := net.DialUDP("udp", nil, uaddr)
 	if err != nil {
-		fmt.Println("error connecting:", err.Error())
+		fmt.Printf("UDP %s error connecting: %s\n", addr, err.Error())
 		return
 	}
 	defer conn.Close()
@@ -118,7 +117,7 @@ func echoClientUDP(addr, msg string) {
 	buffer := make([]byte, 1024)
 	_, err = conn.Write([]byte(msg))
 	if err != nil {
-		fmt.Println("error sending:", err.Error())
+		fmt.Printf("UDP %s error sending: %s\n", addr, err.Error())
 		return
 	}
 
@@ -128,23 +127,25 @@ func echoClientUDP(addr, msg string) {
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 			fmt.Println("timeout:", err.Error())
 		}
-		fmt.Println("error receiving:", err.Error())
+		fmt.Printf("UDP %s error receiving: %s\n", addr, err.Error())
 		return
 	}
 
-	fmt.Println("UDP response from server:", string(buffer[:n]))
+	fmt.Printf("UDP %s response from server: %s\n", addr, string(buffer[:n]))
 }
 
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -target amd64 bpf xdp.c -- -I../include
 func TestXdp(t *testing.T) {
 	go echoServerTCP("127.0.0.1:8080")
-	go echoServerUDP("127.0.0.1:8081")
+	// go echoServerUDP("127.0.0.1:8081")
+	go echoServerUDP("127.0.0.1:8082")
+	go echoServerUDP("192.168.12.226:8082")
 
 	go func() {
 		ticker := time.NewTicker(2 * time.Second)
 		for range ticker.C {
-			go echoClientTCP("127.0.0.1:8080", "hello TCP")
-			go echoClientUDP("127.0.0.1:8081", "hello UDP")
+			// go echoClientTCP("127.0.0.1:8080", "hello TCP")
+			// go echoClientUDP("127.0.0.1:8081", "hello UDP")
 		}
 	}()
 

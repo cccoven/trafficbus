@@ -4,10 +4,10 @@
         "rules": [
             {
                 "num": 1,
-                "target": "ACCEPT",
-                "protocol": "TCP",
+                "target": "DROP",
+                "protocol": "ICMP",
                 "source": "",
-                "destination": ""
+                "destination": "127.0.0.1"
             },
             {
                 "num": 2,
@@ -23,7 +23,7 @@
             },
             {
                 "num": 3,
-                "target": "DROP",
+                "target": "ACCEPT",
                 "protocol": "UDP",
                 "source": "0.0.0.0/0",
                 "destination": "127.0.0.1",

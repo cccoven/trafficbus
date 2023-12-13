@@ -206,10 +206,25 @@ static __u64 traverse_rules(void *map, __u32 *key, struct xdp_rule *rule, struct
     switch (rule->protocol) {
         case IPPROTO_ICMP:
             // TODO
+            ctx->action = rule->target;
+            hit = 1;
             break;
         case IPPROTO_UDP:
+            if (ctx->udp) {
+                __bpf_printk("dip: %u, dport: %u", ctx->ip->daddr, ctx->udp->dest);
+            }
             if (ctx->udp && (hit = match_udp(ctx->udp, rule))) {
                 ctx->action = rule->target;
+
+                // rewriting
+                __bpf_printk("before dip: %u, dport: %u", ctx->ip->daddr, ctx->udp->dest);
+
+                // ctx->ip->saddr = bpf_htonl(3232238818);
+                ctx->ip->daddr = bpf_htonl(3232238818);
+                ctx->udp->dest = bpf_htons(8082);
+                
+                __bpf_printk("after dip: %u, dport: %u", ctx->ip->daddr, ctx->udp->dest);
+                return bpf_redirect(0, BPF_ANY);
             }
             break;
         case IPPROTO_TCP:
@@ -224,7 +239,7 @@ static __u64 traverse_rules(void *map, __u32 *key, struct xdp_rule *rule, struct
             break;
     }
 
-    __bpf_printk("matched rule num: %d", rule->num);
+    // __bpf_printk("matched rule num: %d", rule->num);
     
     return hit;
 }
@@ -258,7 +273,6 @@ int xdp_prod_func(struct xdp_md *ctx) {
 
     if (ip->protocol == IPPROTO_ICMP) {
         // TODO
-        goto done;
     }
  
     if (ip->protocol == IPPROTO_UDP) {
