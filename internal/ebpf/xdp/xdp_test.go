@@ -152,17 +152,18 @@ func loadXdp(ruleFile string) {
 	}
 }
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -target amd64 bpf xdp.c -- -I../include
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -type ipset_type -target amd64 bpf xdp.c -- -I../include
 func TestXdp(t *testing.T) {
-	// go echoServerTCP("127.0.0.1:8080")
 	go echoServerTCP(":8080")
-	go echoServerTCP(":8081")
+	go echoServerUDP(":8081")
 
 	go func() {
 		ticker := time.NewTicker(2 * time.Second)
 		for range ticker.C {
-			// go echoClientTCP("127.0.0.1:8080", "hello TCP")
-			go echoClientTCP("192.168.12.226:8080", "hello TCP")
+			go echoClientTCP("127.0.0.1:8080", "hello TCP")
+			// go echoClientTCP("192.168.0.10:8080", "hello TCP")
+			go echoClientUDP("127.0.0.1:8081", "hello UDP")
+			// go echoClientUDP("192.168.0.10:8081", "hello UDP")
 		}
 	}()
 

@@ -48,3 +48,12 @@ func ParseV4CIDRU32(addr string) (uip uint32, umask uint32, err error) {
 
 	return
 }
+
+func UintToIP(s uint32) net.IP {
+	ip := make(net.IP, 4)
+	ip[0] = byte(s >> 24)
+	ip[1] = byte(s >> 16)
+	ip[2] = byte(s >> 8)
+	ip[3] = byte(s)
+	return ip
+}

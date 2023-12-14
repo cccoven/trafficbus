@@ -1,13 +1,16 @@
 [
     {
         "iface": "lo",
+        "ipset": {
+            "myset": ["127.0.0.1/8", "192.168.0.10"]
+        },
         "rules": [
             {
                 "num": 1,
                 "target": "DROP",
                 "protocol": "ICMP",
                 "source": "",
-                "destination": "127.0.0.1"
+                "destination": ""
             },
             {
                 "num": 2,
@@ -16,6 +19,10 @@
                 "source": "0.0.0.0/0",
                 "destination": "0.0.0.0",
                 "match_extension": {
+                    "set": {
+                        "name": "myset",
+                        "type": "DST"
+                    },
                     "tcp": {
                         "dst_port": 8080
                     }

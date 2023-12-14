@@ -16,7 +16,6 @@ func TestParseV4CIDRU32(t *testing.T) {
 		"1.1.1.1",
 		"127.0.0.1",
 		"",
-		"192.168.12.226",
 	}
 	for _, ip := range ips {
 		i, m, err := ParseV4CIDRU32(ip)
@@ -25,4 +24,14 @@ func TestParseV4CIDRU32(t *testing.T) {
 			t.Error(err.Error())
 		}
 	}
+}
+
+func TestUintToIP(t *testing.T) {
+	ip := UintToIP(2130706433)
+
+	if ip.String() != "127.0.0.1" {
+		t.Fatal("error ip")
+	}
+
+	fmt.Println(ip.String())
 }

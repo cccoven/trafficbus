@@ -19,6 +19,11 @@ var (
 		"UDP":  bpfProtocolUDP,
 		"TCP":  bpfProtocolTCP,
 	}
+
+	IPSetTypeMap = map[string]bpfIpsetType{
+		"SRC": bpfIpsetTypeSRC,
+		"DST": bpfIpsetTypeDST,
+	}
 )
 
 func ConvertToXdpRule(ori []trafficbus.Rule) ([]bpfXdpRule, error) {
@@ -45,11 +50,20 @@ func ConvertToXdpRule(ori []trafficbus.Rule) ([]bpfXdpRule, error) {
 
 		if item.MatchExtension != nil {
 			r.MatchExt.Enable = 1
+
+			if item.MatchExtension.Set != nil {
+				r.MatchExt.Set.Enable = 1
+				// TODO
+				// r.MatchExt.Set.Addrs
+				r.MatchExt.Set.Type = int32(IPSetTypeMap[item.MatchExtension.Set.Type])
+			}
+			
 			if item.MatchExtension.UDP != nil {
 				r.MatchExt.Udp.Enable = 1
 				r.MatchExt.Udp.Sport = uint16(item.MatchExtension.UDP.SrcPort)
 				r.MatchExt.Udp.Dport = uint16(item.MatchExtension.UDP.DstPort)
 			}
+
 			if item.MatchExtension.TCP != nil {
 				r.MatchExt.Tcp.Enable = 1
 				r.MatchExt.Tcp.Sport = uint16(item.MatchExtension.TCP.SrcPort)

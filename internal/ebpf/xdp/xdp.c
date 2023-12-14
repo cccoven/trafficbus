@@ -6,6 +6,7 @@
 char __license[] SEC("license") = "Dual MIT/GPL";
 
 #define MAX_RULES 5
+#define MAX_IPSET 256
 
 enum target {
     ABORTED = XDP_ABORTED,
@@ -20,6 +21,17 @@ enum protocol {
     ICMP = IPPROTO_ICMP,
     UDP = IPPROTO_UDP,
     TCP = IPPROTO_TCP,
+};
+
+enum ipset_type {
+    SRC,
+    DST,
+};
+
+struct set_ext {
+    int enable;
+    u32 addrs[MAX_IPSET];
+    int type;
 };
 
 // example: -p udp --dport 8080
@@ -38,6 +50,7 @@ struct tcp_ext {
 // example: -m comment --comment "foo"
 struct match_ext {
     int enable;
+    struct set_ext set;
     struct udp_ext udp;
     struct tcp_ext tcp;
     u16 multiport[65535];
@@ -65,6 +78,7 @@ struct xdp_rule {
 // Force emitting enum xdp_action into the ELF.
 const enum target *action __attribute__((unused));
 const enum protocol *prot __attribute__((unused));
+const enum ipset_type *ipsettype __attribute__((unused));
 
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);

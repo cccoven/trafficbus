@@ -12,6 +12,13 @@ import (
 	"github.com/cilium/ebpf"
 )
 
+type bpfIpsetType uint32
+
+const (
+	bpfIpsetTypeSRC bpfIpsetType = 0
+	bpfIpsetTypeDST bpfIpsetType = 1
+)
+
 type bpfProtocol uint32
 
 const (
@@ -44,7 +51,12 @@ type bpfXdpRule struct {
 	DestinationMask uint32
 	MatchExt        struct {
 		Enable int32
-		Udp    struct {
+		Set    struct {
+			Enable int32
+			Addrs  [256]uint32
+			Type   int32
+		}
+		Udp struct {
 			Enable int32
 			Sport  uint16
 			Dport  uint16

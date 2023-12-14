@@ -5,6 +5,13 @@ import (
 	"os"
 )
 
+type IPSet map[string][]string
+
+type SetExtension struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
 type UDPExtension struct {
 	Enable  int `json:"enable"`
 	SrcPort int `json:"src_port"`
@@ -19,6 +26,7 @@ type TCPExtension struct {
 
 type MatchExtension struct {
 	Enable int           `json:"enable"`
+	Set    *SetExtension `json:"set,omitempty"`
 	UDP    *UDPExtension `json:"udp,omitempty"`
 	TCP    *TCPExtension `json:"tcp,omitempty"`
 }
@@ -37,6 +45,7 @@ type Rule struct {
 
 type RuleSet struct {
 	IFace string `json:"iface"`
+	IPSet IPSet  `json:"ipset"`
 	Rules []Rule `json:"rules"`
 }
 
