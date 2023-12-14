@@ -11,10 +11,10 @@
             },
             {
                 "num": 2,
-                "target": "DROP",
+                "target": "ACCEPT",
                 "protocol": "TCP",
                 "source": "0.0.0.0/0",
-                "destination": "127.0.0.1/8",
+                "destination": "0.0.0.0",
                 "match_extension": {
                     "tcp": {
                         "dst_port": 8080
@@ -26,7 +26,7 @@
                 "target": "ACCEPT",
                 "protocol": "UDP",
                 "source": "0.0.0.0/0",
-                "destination": "127.0.0.1",
+                "destination": "0.0.0.0",
                 "match_extension": {
                     "udp": {
                         "dst_port": 8081

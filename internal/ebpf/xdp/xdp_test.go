@@ -35,7 +35,7 @@ func echoServerTCP(addr string) {
 					return
 				}
 
-				fmt.Printf("TCP %s received: %s\n", addr, string(buffer[:n]))
+				fmt.Printf("TCP %s received: %s\n", conn.LocalAddr().String(), string(buffer[:n]))
 				_, err = conn.Write(buffer[:n])
 				if err != nil {
 					fmt.Printf("TCP %s error writing: %s\n", addr, err.Error())
@@ -134,24 +134,10 @@ func echoClientUDP(addr, msg string) {
 	fmt.Printf("UDP %s response from server: %s\n", addr, string(buffer[:n]))
 }
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -target amd64 bpf xdp.c -- -I../include
-func TestXdp(t *testing.T) {
-	go echoServerTCP("127.0.0.1:8080")
-	// go echoServerUDP("127.0.0.1:8081")
-	go echoServerUDP("127.0.0.1:8082")
-	go echoServerUDP("192.168.12.226:8082")
-
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		for range ticker.C {
-			// go echoClientTCP("127.0.0.1:8080", "hello TCP")
-			// go echoClientUDP("127.0.0.1:8081", "hello UDP")
-		}
-	}()
-
-	ruleSet, err := trafficbus.LoadRuleSetFromJSON("../../../testdata/rule.json")
+func loadXdp(ruleFile string) {
+	ruleSet, err := trafficbus.LoadRuleSetFromJSON(ruleFile)
 	if err != nil {
-		t.Fatal("failed to load rule from json: ", err)
+		log.Fatal("failed to load rule from json: ", err)
 	}
 
 	for _, item := range ruleSet {
@@ -164,6 +150,23 @@ func TestXdp(t *testing.T) {
 			xdpProg.Run()
 		}(item)
 	}
+}
+
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -target amd64 bpf xdp.c -- -I../include
+func TestXdp(t *testing.T) {
+	// go echoServerTCP("127.0.0.1:8080")
+	go echoServerTCP(":8080")
+	go echoServerTCP(":8081")
+
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		for range ticker.C {
+			// go echoClientTCP("127.0.0.1:8080", "hello TCP")
+			go echoClientTCP("192.168.12.226:8080", "hello TCP")
+		}
+	}()
+
+	loadXdp("../../../testdata/rule.json")
 
 	select {}
 }

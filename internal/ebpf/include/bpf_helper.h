@@ -65,6 +65,45 @@ struct xdp_md {
 })																\
 
 
+/* Forward declarations of BPF structs */
+struct bpf_fib_lookup;
+struct bpf_sk_lookup;
+struct bpf_perf_event_data;
+struct bpf_perf_event_value;
+struct bpf_pidns_info;
+struct bpf_redir_neigh;
+struct bpf_sock;
+struct bpf_sock_addr;
+struct bpf_sock_ops;
+struct bpf_sock_tuple;
+struct bpf_spin_lock;
+struct bpf_sysctl;
+struct bpf_tcp_sock;
+struct bpf_tunnel_key;
+struct bpf_xfrm_state;
+struct linux_binprm;
+struct pt_regs;
+struct sk_reuseport_md;
+struct sockaddr;
+struct tcphdr;
+struct seq_file;
+struct tcp6_sock;
+struct tcp_sock;
+struct tcp_timewait_sock;
+struct tcp_request_sock;
+struct udp6_sock;
+struct unix_sock;
+struct task_struct;
+struct __sk_buff;
+struct sk_msg_md;
+struct xdp_md;
+struct path;
+struct btf_ptr;
+struct inode;
+struct socket;
+struct file;
+struct bpf_timer;
+
 /*
  * bpf_map_lookup_elem
  *
