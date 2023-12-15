@@ -26,6 +26,17 @@ var (
 	}
 )
 
+func ConvertRule(source []trafficbus.RuleSet) ([]bpfXdpRule, error) {
+	var rules []bpfXdpRule
+	var err error
+
+	for _, ruleSet := range source {
+		
+	}
+
+	return rules, nil
+}
+
 func ConvertToXdpRule(ori []trafficbus.Rule) ([]bpfXdpRule, error) {
 	var rules []bpfXdpRule
 	var err error
@@ -57,7 +68,7 @@ func ConvertToXdpRule(ori []trafficbus.Rule) ([]bpfXdpRule, error) {
 				// r.MatchExt.Set.Addrs
 				r.MatchExt.Set.Type = int32(IPSetTypeMap[item.MatchExtension.Set.Type])
 			}
-			
+
 			if item.MatchExtension.UDP != nil {
 				r.MatchExt.Udp.Enable = 1
 				r.MatchExt.Udp.Sport = uint16(item.MatchExtension.UDP.SrcPort)

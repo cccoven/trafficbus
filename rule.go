@@ -2,6 +2,7 @@ package trafficbus
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 )
 
@@ -43,10 +44,51 @@ type Rule struct {
 	TargetExtension *TCPExtension   `json:"target_extension,omitempty"`
 }
 
-type RuleSet struct {
-	IFace string `json:"iface"`
-	IPSet IPSet  `json:"ipset"`
-	Rules []Rule `json:"rules"`
+type RuleSet map[string][]Rule
+
+type RuleStorage struct {
+	ipSet   IPSet
+	ruleSet RuleSet
+}
+
+func NewRuleStorage() *RuleStorage {
+	return &RuleStorage{}
+}
+
+func (rs *RuleStorage) GetIPSet(setName string) []string {
+	return rs.ipSet[setName]
+}
+
+func (rs *RuleStorage) AddIPSet(setName string, addrs []string) error {
+	if rs.GetIPSet(setName) != nil {
+		return fmt.Errorf("ipset %s already exists", setName)
+	}
+	rs.ipSet[setName] = addrs
+	return nil
+}
+
+func (rs *RuleStorage) DelIPSet(setName string) {
+	delete(rs.ipSet, setName)
+}
+
+func (rs *RuleStorage) GetRules(iface string) []Rule {
+	return rs.ruleSet[iface]
+}
+
+func (rs *RuleStorage) AddRules(iface string, rules []Rule) error {
+	if rs.GetRules(iface) != nil {
+		return fmt.Errorf("rules %s already exists", iface)
+	}
+	rs.ruleSet[iface] = rules
+	return nil
+}
+
+func (rs *RuleStorage) DelRules(iface string) {
+	delete(rs.ruleSet, iface)
+}
+
+func (rs *RuleStorage) InsertRule(iface string, num int, rule Rule) {
+	// TODO
 }
 
 func LoadRuleSetFromJSON(f string) ([]RuleSet, error) {

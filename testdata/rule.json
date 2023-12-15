@@ -1,45 +1,50 @@
-[
-    {
-        "iface": "lo",
-        "ipset": {
-            "myset": ["127.0.0.1/8", "192.168.0.10"]
-        },
-        "rules": [
-            {
-                "num": 1,
-                "target": "DROP",
-                "protocol": "ICMP",
-                "source": "",
-                "destination": ""
-            },
-            {
-                "num": 2,
-                "target": "ACCEPT",
-                "protocol": "TCP",
-                "source": "0.0.0.0/0",
-                "destination": "0.0.0.0",
-                "match_extension": {
-                    "set": {
-                        "name": "myset",
-                        "type": "DST"
-                    },
-                    "tcp": {
-                        "dst_port": 8080
+{
+    "ip_sets": [
+        {
+            "name": "myset",
+            "addrs": ["127.0.0.1/8", "192.168.0.10"]
+        }
+    ],
+    "rule_sets": [
+        {
+            "iface": "lo",
+            "rules": [
+                {
+                    "num": 1,
+                    "target": "DROP",
+                    "protocol": "ICMP",
+                    "source": "",
+                    "destination": ""
+                },
+                {
+                    "num": 2,
+                    "target": "ACCEPT",
+                    "protocol": "TCP",
+                    "source": "0.0.0.0/0",
+                    "destination": "0.0.0.0",
+                    "match_extension": {
+                        "set": {
+                            "name": "myset",
+                            "type": "DST"
+                        },
+                        "tcp": {
+                            "dst_port": 8080
+                        }
+                    }
+                },
+                {
+                    "num": 3,
+                    "target": "ACCEPT",
+                    "protocol": "UDP",
+                    "source": "0.0.0.0/0",
+                    "destination": "0.0.0.0",
+                    "match_extension": {
+                        "udp": {
+                            "dst_port": 8081
+                        }
                     }
                 }
-            },
-            {
-                "num": 3,
-                "target": "ACCEPT",
-                "protocol": "UDP",
-                "source": "0.0.0.0/0",
-                "destination": "0.0.0.0",
-                "match_extension": {
-                    "udp": {
-                        "dst_port": 8081
-                    }
-                }
-            }
-        ]
-    }
-]
+            ]
+        }
+    ]
+}
