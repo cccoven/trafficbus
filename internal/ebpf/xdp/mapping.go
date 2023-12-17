@@ -26,17 +26,6 @@ var (
 	}
 )
 
-func ConvertRule(source []trafficbus.RuleSet) ([]bpfXdpRule, error) {
-	var rules []bpfXdpRule
-	var err error
-
-	for _, ruleSet := range source {
-		
-	}
-
-	return rules, nil
-}
-
 func ConvertToXdpRule(ori []trafficbus.Rule) ([]bpfXdpRule, error) {
 	var rules []bpfXdpRule
 	var err error

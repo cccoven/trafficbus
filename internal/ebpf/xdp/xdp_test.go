@@ -6,8 +6,6 @@ import (
 	"net"
 	"testing"
 	"time"
-
-	"github.com/cccoven/trafficbus"
 )
 
 func echoServerTCP(addr string) {
@@ -135,21 +133,21 @@ func echoClientUDP(addr, msg string) {
 }
 
 func loadXdp(ruleFile string) {
-	ruleSet, err := trafficbus.LoadRuleSetFromJSON(ruleFile)
-	if err != nil {
-		log.Fatal("failed to load rule from json: ", err)
-	}
+	// ruleSet, err := trafficbus.LoadRuleSetFromJSON(ruleFile)
+	// if err != nil {
+	// 	log.Fatal("failed to load rule from json: ", err)
+	// }
 
-	for _, item := range ruleSet {
-		go func(rs trafficbus.RuleSet) {
-			rules, err := ConvertToXdpRule(rs.Rules)
-			if err != nil {
-				log.Fatal("failed to convert rule: ", err)
-			}
-			xdpProg := NewXdp(rs.IFace, rules)
-			xdpProg.Run()
-		}(item)
-	}
+	// for _, item := range ruleSet {
+	// 	go func(rs trafficbus.RuleSet) {
+	// 		rules, err := ConvertToXdpRule(rs.Rules)
+	// 		if err != nil {
+	// 			log.Fatal("failed to convert rule: ", err)
+	// 		}
+	// 		xdpProg := NewXdp(rs.IFace, rules)
+	// 		xdpProg.Run()
+	// 	}(item)
+	// }
 }
 
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -type ipset_type -target amd64 bpf xdp.c -- -I../include
