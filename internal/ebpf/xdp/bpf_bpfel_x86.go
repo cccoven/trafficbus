@@ -20,14 +20,13 @@ const (
 )
 
 type bpfIpv4LpmKey struct {
-	Setname   [20]uint8
 	Prefixlen uint32
 	Data      uint32
 }
 
 type bpfIpv4LpmVal struct {
-	Setname [20]uint8
-	Data    uint32
+	Addr uint32
+	Mask uint32
 }
 
 type bpfProtocol uint32
@@ -64,7 +63,7 @@ type bpfXdpRule struct {
 		Enable int32
 		Set    struct {
 			Enable int32
-			Addrs  [255]uint32
+			Id     uint32
 			Type   int32
 		}
 		Udp struct {
@@ -131,8 +130,9 @@ type bpfProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type bpfMapSpecs struct {
-	IpsetMap *ebpf.MapSpec `ebpf:"ipset_map"`
-	RuleMap  *ebpf.MapSpec `ebpf:"rule_map"`
+	IpsetInnerMap *ebpf.MapSpec `ebpf:"ipset_inner_map"`
+	IpsetMap      *ebpf.MapSpec `ebpf:"ipset_map"`
+	RuleMap       *ebpf.MapSpec `ebpf:"rule_map"`
 }
 
 // bpfObjects contains all objects after they have been loaded into the kernel.
@@ -154,12 +154,14 @@ func (o *bpfObjects) Close() error {
 //
 // It can be passed to loadBpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type bpfMaps struct {
-	IpsetMap *ebpf.Map `ebpf:"ipset_map"`
-	RuleMap  *ebpf.Map `ebpf:"rule_map"`
+	IpsetInnerMap *ebpf.Map `ebpf:"ipset_inner_map"`
+	IpsetMap      *ebpf.Map `ebpf:"ipset_map"`
+	RuleMap       *ebpf.Map `ebpf:"rule_map"`
 }
 
 func (m *bpfMaps) Close() error {
 	return _BpfClose(
+		m.IpsetInnerMap,
 		m.IpsetMap,
 		m.RuleMap,
 	)

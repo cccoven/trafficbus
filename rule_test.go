@@ -9,22 +9,22 @@ func TestIPSet(t *testing.T) {
 	setName := "myset"
 
 	store.AppendIP(setName, "1.1.1.1/0", "2.2.2.2")
-	if len(store.GetIPSet(setName)) != 2 {
+	if len(store.GetIPSet(setName).Addrs) != 2 {
 		t.Fatal("the rule length should be 2")
 	}
 
-	addrs := store.GetIPSet(setName)
+	addrs := store.GetIPSet(setName).Addrs
 	if addrs[0] != "1.1.1.1/0" || addrs[1] != "2.2.2.2" {
 		t.Fatal("wrong ipset content")
 	}
 
 	store.DelIP(setName, "2.2.2.2")
-	if len(store.GetIPSet(setName)) != 1 {
+	if len(store.GetIPSet(setName).Addrs) != 1 {
 		t.Fatal("the rule length should be 1")
 	}
 
 	store.ClearIPSet(setName)
-	if len(store.GetIPSet(setName)) != 0 {
+	if len(store.GetIPSet(setName).Addrs) != 0 {
 		t.Fatal("the rule length should be 0")
 	}
 }

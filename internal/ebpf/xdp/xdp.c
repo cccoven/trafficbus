@@ -30,7 +30,7 @@ enum ipset_type {
 
 struct set_ext {
     int enable;
-    u32 addrs[MAX_IPSET];
+    u32 id;
     int type;
 };
 
@@ -86,18 +86,26 @@ struct ipv4_lpm_key {
 };
 
 struct ipv4_lpm_val {
-    __u8 setname[20];
-    __u32 data;
+    __u32 addr;
+    __u32 mask;
 };
 
-// Longest Prefix Match
-struct {
+struct ipset_inner_map {
     __uint(type, BPF_MAP_TYPE_LPM_TRIE);
     __type(key, struct ipv4_lpm_key);
     __type(value, struct ipv4_lpm_val);
     __uint(map_flags, BPF_F_NO_PREALLOC);
+    __uint(max_entries, 255);
+} ipset_inner_map SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH_OF_MAPS);
     __uint(max_entries, MAX_IPSET);
-} ipset_map SEC(".maps");
+    __type(key, __u32);
+    __array(values, struct ipset_inner_map);
+} ipset_map SEC(".maps") = {
+    .values = { &ipset_inner_map }
+};
 
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
@@ -266,21 +274,17 @@ static __u64 traverse_rules(void *map, __u32 *key, struct xdp_rule *rule, struct
 
 SEC("xdp")
 int xdp_prod_func(struct xdp_md *ctx) {
-    struct ipv4_lpm_key key = {
-        .prefixlen = 32,
-        .data = 2130706433,
-    };
-    struct ipv4_lpm_val *v = bpf_map_lookup_elem(&ipset_map, &key);
-    if (v) {
-        int isequal = 1;
-        __u8 setname[20] = "mysetss";
-        for (int i = 0; i < sizeof(setname); i++) {
-            if (setname[i] != v->setname[i]) {
-                isequal = 0;
-                break;
-            }
+    __u32 outer_key = 1234;
+    struct ipset_inner_map *inner_map = bpf_map_lookup_elem(&ipset_map, &outer_key);
+    if (inner_map) {
+        struct ipv4_lpm_key inner_key = {
+            .prefixlen = 32,
+            .data = 2130706433,
+        };
+        struct ipv4_lpm_val *inner_val = bpf_map_lookup_elem(inner_map, &inner_key);
+        if (inner_val) {
+            __bpf_printk("ip: %u, mask: %u", inner_val->addr, inner_val->mask);
         }
-        __bpf_printk("setname: %s, data: %u, compare: %u", v->setname, v->data, isequal);
     }
 
     return XDP_PASS;

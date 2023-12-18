@@ -33,22 +33,41 @@ func str2uint(d []uint8, s string) {
 	}
 }
 
-func (x *Xdp) loadIPSet(emap *ebpf.Map) error {
-	k := &bpfIpv4LpmKey{
-		Prefixlen: 32,
+func (x *Xdp) loadIPSet(outerMap *ebpf.Map, innerMap *ebpf.Map) error {
+	innerKey := bpfIpv4LpmKey{
+		Prefixlen: uint32(32),
 		Data:      uint32(2130706433),
 	}
-	str2uint(k.Setname[:], "myset")
-
-	v := &bpfIpv4LpmVal{
-		Data: uint32(2130706433),
+	innerVal := bpfIpv4LpmVal{
+		Addr: 1234,
+		Mask: 5678,
 	}
-	str2uint(v.Setname[:], "mysetsss")
-
-	err := emap.Put(k, v)
+	err := innerMap.Put(&innerKey, &innerVal)
 	if err != nil {
 		return err
 	}
+
+	// outerKey := bpfIpsetKey{}
+	// str2uint(outerKey.Name[:], "myset")
+
+	err = outerMap.Put(uint32(1234), innerMap)
+	if err != nil {
+		return err
+	}
+
+	// k := &bpfIpsetKey{}
+	// str2uint(k.Name[:], "myset")
+
+	// v := &bpfIpsetVal{}
+	// v.Addrs[0] = 2130706433
+	// v.Masks[0] = 2130706433
+
+	// v.NumEntry++
+
+	// err := emap.Put(k, v)
+	// if err != nil {
+	// 	return err
+	// }
 
 	return nil
 }
@@ -83,7 +102,7 @@ func (x *Xdp) Run() {
 	}
 	defer objs.Close()
 
-	err = x.loadIPSet(objs.IpsetMap)
+	err = x.loadIPSet(objs.IpsetMap, objs.IpsetInnerMap)
 	if err != nil {
 		log.Fatalf("failed to load ipset to map: %s", err.Error())
 	}

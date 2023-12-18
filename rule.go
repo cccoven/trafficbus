@@ -8,11 +8,17 @@ import (
 )
 
 const (
-	MaxIPSet = 255
+	MaxIPSet = 256
 	MaxRules = 3
 )
 
-type IPSet map[string][]string
+type IPSetEntry struct {
+	ID    uint32
+	Name  string
+	Addrs []string
+}
+
+type IPSet map[string]*IPSetEntry
 
 type SetExtension struct {
 	Name string `json:"name"`
@@ -64,24 +70,28 @@ func NewRuleStorage() *RuleStorage {
 	}
 }
 
-func (rs *RuleStorage) GetIPSet(setName string) []string {
+func (rs *RuleStorage) GetIPSet(setName string) *IPSetEntry {
 	return rs.ipSet[setName]
 }
 
 // AppendIP appends ip(s) to an ipset
 func (rs *RuleStorage) AppendIP(setName string, ips ...string) {
-	rs.ipSet[setName] = append(rs.ipSet[setName], ips...)
+	_, ok := rs.ipSet[setName]
+	if !ok {
+		rs.ipSet[setName] = new(IPSetEntry)
+	}
+	rs.ipSet[setName].Addrs = append(rs.ipSet[setName].Addrs, ips...)
 }
 
 func (rs *RuleStorage) DelIP(setName, ip string) error {
-	addrs, ok := rs.ipSet[setName]
+	entry, ok := rs.ipSet[setName]
 	if !ok {
 		return fmt.Errorf("ipset %s does not exist", setName)
 	}
 
-	for i, addr := range addrs {
+	for i, addr := range entry.Addrs {
 		if addr == ip {
-			rs.ipSet[setName] = append(rs.ipSet[setName][:i], rs.ipSet[setName][i+1:]...)
+			rs.ipSet[setName].Addrs = append(rs.ipSet[setName].Addrs[:i], rs.ipSet[setName].Addrs[i+1:]...)
 			return nil
 		}
 	}
@@ -92,7 +102,6 @@ func (rs *RuleStorage) DelIP(setName, ip string) error {
 func (rs *RuleStorage) ClearIPSet(setName string) {
 	delete(rs.ipSet, setName)
 }
-
 
 func (rs *RuleStorage) GetRules(iface string) []*Rule {
 	return rs.ruleSet[iface]
