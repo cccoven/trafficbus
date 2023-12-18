@@ -6,7 +6,7 @@
 char __license[] SEC("license") = "Dual MIT/GPL";
 
 #define MAX_RULES 5
-#define MAX_IPSET 256
+#define MAX_IPSET 255
 
 enum target {
     ABORTED = XDP_ABORTED,
@@ -80,12 +80,31 @@ const enum target *action __attribute__((unused));
 const enum protocol *prot __attribute__((unused));
 const enum ipset_type *ipsettype __attribute__((unused));
 
+struct ipv4_lpm_key {
+    __u32 prefixlen;
+    __u32 data;
+};
+
+struct ipv4_lpm_val {
+    __u8 setname[20];
+    __u32 data;
+};
+
+// Longest Prefix Match
+struct {
+    __uint(type, BPF_MAP_TYPE_LPM_TRIE);
+    __type(key, struct ipv4_lpm_key);
+    __type(value, struct ipv4_lpm_val);
+    __uint(map_flags, BPF_F_NO_PREALLOC);
+    __uint(max_entries, MAX_IPSET);
+} ipset_map SEC(".maps");
+
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
 	__uint(max_entries, MAX_RULES);
     __type(key, __u32);
     __type(value, struct xdp_rule);
-} xdp_rule_map SEC(".maps");
+} rule_map SEC(".maps");
 
 struct callback_ctx {
     struct xdp_md *xdp_data;
@@ -247,6 +266,25 @@ static __u64 traverse_rules(void *map, __u32 *key, struct xdp_rule *rule, struct
 
 SEC("xdp")
 int xdp_prod_func(struct xdp_md *ctx) {
+    struct ipv4_lpm_key key = {
+        .prefixlen = 32,
+        .data = 2130706433,
+    };
+    struct ipv4_lpm_val *v = bpf_map_lookup_elem(&ipset_map, &key);
+    if (v) {
+        int isequal = 1;
+        __u8 setname[20] = "mysetss";
+        for (int i = 0; i < sizeof(setname); i++) {
+            if (setname[i] != v->setname[i]) {
+                isequal = 0;
+                break;
+            }
+        }
+        __bpf_printk("setname: %s, data: %u, compare: %u", v->setname, v->data, isequal);
+    }
+
+    return XDP_PASS;
+
     void *data = (void *)(long)ctx->data;
     void *data_end = (void *)(long)ctx->data_end;
     struct cursor cur = { .pos = data };
@@ -292,7 +330,7 @@ int xdp_prod_func(struct xdp_md *ctx) {
         cbstack.tcp = tcp;
     }
 
-    bpf_for_each_map_elem(&xdp_rule_map, traverse_rules, &cbstack, BPF_ANY);
+    bpf_for_each_map_elem(&rule_map, traverse_rules, &cbstack, BPF_ANY);
 
 done:
     return cbstack.action;

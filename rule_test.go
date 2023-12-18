@@ -33,10 +33,10 @@ func TestRuleSet(t *testing.T) {
 	store := NewRuleStorage()
 	iface := "lo"
 
-	store.InsertRule(iface, 0, &Rule{Target: "A"})
-	store.InsertRule(iface, 1, &Rule{Target: "B"})
-	store.InsertRule(iface, 2, &Rule{Target: "C"})
-	store.InsertRule(iface, 1, &Rule{Target: "B1"})
+	store.InsertRule(iface, 0, &Rule{Num: 1, Target: "A"})
+	store.InsertRule(iface, 1, &Rule{Num: 2, Target: "B"})
+	store.InsertRule(iface, 2, &Rule{Num: 3, Target: "C"})
+	store.InsertRule(iface, 1, &Rule{Num: 2, Target: "B1"})
 	if len(store.GetRules(iface)) != 4 {
 		t.Fatal("the rule length should be 4")
 	}

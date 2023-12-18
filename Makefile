@@ -4,11 +4,13 @@ PLAY_FILE ?=
 generate:
 	go generate ./...
 
-run: generate
-	@go run cmd/trafficbus/*.go -f $(WORKSPACE)/testdata/rule.json
-
 trace:
 	@cat /sys/kernel/tracing/trace_pipe
+
+test:
+	@go test --timeout 30s \
+		github.com/cccoven/trafficbus \
+		github.com/cccoven/trafficbus/internal 
 
 # dev
 playground:

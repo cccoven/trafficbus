@@ -20,7 +20,7 @@
 
 #define __uint(name, val) int (*name)[val]
 #define __type(name, val) typeof(val) *name
-
+#define __array(name, val) typeof(val) *name[]
 
 typedef unsigned char __u8;
 typedef short int __s16;

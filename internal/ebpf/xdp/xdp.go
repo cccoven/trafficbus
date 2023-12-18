@@ -6,10 +6,11 @@ import (
 	"time"
 
 	"github.com/cccoven/trafficbus"
+	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 )
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -target amd64 bpf xdp.c -- -I../include
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -type ipset_type -target amd64 bpf xdp.c -- -I../include
 
 type Xdp struct {
 	iface string
@@ -23,7 +24,36 @@ func NewXdp(iface string, rules []bpfXdpRule) trafficbus.Adapter {
 	}
 }
 
-func (x *Xdp) loadRules(objs *bpfObjects) error {
+func str2uint(d []uint8, s string) {
+	for i, char := range s {
+		if i >= len(d) {
+			break
+		}
+		d[i] = uint8(char)
+	}
+}
+
+func (x *Xdp) loadIPSet(emap *ebpf.Map) error {
+	k := &bpfIpv4LpmKey{
+		Prefixlen: 32,
+		Data:      uint32(2130706433),
+	}
+	str2uint(k.Setname[:], "myset")
+
+	v := &bpfIpv4LpmVal{
+		Data: uint32(2130706433),
+	}
+	str2uint(v.Setname[:], "mysetsss")
+
+	err := emap.Put(k, v)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (x *Xdp) loadRules(emap *ebpf.Map) error {
 	keys := make([]uint32, len(x.rules))
 	values := make([]bpfXdpRule, len(x.rules))
 	// load rule map
@@ -32,7 +62,7 @@ func (x *Xdp) loadRules(objs *bpfObjects) error {
 		values[i] = rule
 	}
 
-	_, err := objs.XdpRuleMap.BatchUpdate(keys, values, nil)
+	_, err := emap.BatchUpdate(keys, values, nil)
 	if err != nil {
 		return err
 	}
@@ -53,7 +83,12 @@ func (x *Xdp) Run() {
 	}
 	defer objs.Close()
 
-	err = x.loadRules(&objs)
+	err = x.loadIPSet(objs.IpsetMap)
+	if err != nil {
+		log.Fatalf("failed to load ipset to map: %s", err.Error())
+	}
+
+	err = x.loadRules(objs.RuleMap)
 	if err != nil {
 		log.Fatalf("failed to load rules to map: %s", err.Error())
 	}

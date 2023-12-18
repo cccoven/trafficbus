@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	MaxIPSet = 256
+	MaxIPSet = 255
 	MaxRules = 3
 )
 

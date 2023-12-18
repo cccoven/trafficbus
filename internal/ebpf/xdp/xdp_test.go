@@ -133,6 +133,9 @@ func echoClientUDP(addr, msg string) {
 }
 
 func loadXdp(ruleFile string) {
+	xdpProg := NewXdp("lo", nil)
+	xdpProg.Run()
+
 	// ruleSet, err := trafficbus.LoadRuleSetFromJSON(ruleFile)
 	// if err != nil {
 	// 	log.Fatal("failed to load rule from json: ", err)
