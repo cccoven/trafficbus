@@ -229,6 +229,9 @@ static __u64 traverse_rules(void *map, __u32 *key, struct xdp_rule *rule, struct
         return 1;
     }
 
+    __bpf_printk("num: %u, target: %u, protocol: %u", rule->num, rule->target, rule->protocol);
+    return 0;
+
     if (ctx->ip) {
         int hitprot = match_protocol(ctx->ip->protocol, rule->protocol);
         if (!hitprot) {
@@ -274,6 +277,9 @@ static __u64 traverse_rules(void *map, __u32 *key, struct xdp_rule *rule, struct
 
 SEC("xdp")
 int xdp_prod_func(struct xdp_md *ctx) {
+    __bpf_printk("ingress index: %u", ctx->ingress_ifindex);
+    return XDP_PASS;
+    
     // __u32 outer_key = 1234;
     // struct ipset_inner_map *inner_map = bpf_map_lookup_elem(&ipset_map, &outer_key);
     // if (inner_map) {

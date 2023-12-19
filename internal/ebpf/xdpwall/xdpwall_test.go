@@ -167,3 +167,76 @@ func TestXdp(t *testing.T) {
 
 	select {}
 }
+
+func TestNetDev(t *testing.T) {
+	i, err := net.InterfaceByIndex(1)
+	if err != nil {
+		t.Error(err)
+	}
+	fmt.Println(i.Index, ", ", i.Name)
+
+	i2, err := net.InterfaceByName("lo")
+	fmt.Println(i2.Index, ", ", i2.Name)
+}
+
+func TestXdpWall(t *testing.T) {
+	go echoServerTCP(":8080")
+	go echoServerUDP(":8081")
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		for range ticker.C {
+			go echoClientTCP("127.0.0.1:8080", "hello TCP")
+			// go echoClientUDP("127.0.0.1:8081", "hello UDP")
+		}
+	}()
+
+	wall := NewXdpWall()
+
+	wall.rules["lo"] = []Rule{
+		{
+			Enable:   1,
+			Num:      0,
+			Target:   uint32(bpfTargetACCEPT),
+			Protocol: uint32(bpfProtocolICMP),
+		},
+		{
+			Enable:   1,
+			Num:      1,
+			Target:   uint32(bpfTargetACCEPT),
+			Protocol: uint32(bpfProtocolICMP),
+		},
+	}
+	// wall.rules["enp0s3"] = []Rule{
+	// 	{
+	// 		Enable:   1,
+	// 		Num:      0,
+	// 		Target:   uint32(bpfTargetACCEPT),
+	// 		Protocol: 0,
+	// 	},
+	// }
+
+	wall.Run()
+
+	// time.Sleep(5 * time.Second)
+	// wall.detach("enp0s3")
+
+	// // wall.detach("lo")
+	// err := wall.updateRule("lo", Rule{
+	// 	Enable:   1,
+	// 	Num:      0,
+	// 	Target:   uint32(bpfTargetACCEPT),
+	// 	Protocol: uint32(bpfProtocolTCP),
+	// })
+	// if err != nil {
+	// 	t.Error(err)
+	// }
+	// wall.attach("lo")
+
+	// wall.detach("lo")
+
+	// time.Sleep(5 * time.Second)
+
+	// wall.attach("lo")
+
+	select {}
+}
