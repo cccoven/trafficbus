@@ -23,7 +23,7 @@ enum protocol {
     TCP = IPPROTO_TCP,
 };
 
-enum ipset_type {
+enum ipset_direction {
     SRC,
     DST,
 };
@@ -31,7 +31,7 @@ enum ipset_type {
 struct set_ext {
     int enable;
     u32 id;
-    int type;
+    int direction;
 };
 
 // example: -p udp --dport 8080
@@ -78,7 +78,7 @@ struct xdp_rule {
 // Force emitting enum xdp_action into the ELF.
 const enum target *action __attribute__((unused));
 const enum protocol *prot __attribute__((unused));
-const enum ipset_type *ipsettype __attribute__((unused));
+const enum ipset_direction *ipsetdirectrion __attribute__((unused));
 
 struct ipv4_lpm_key {
     __u32 prefixlen;
@@ -274,20 +274,20 @@ static __u64 traverse_rules(void *map, __u32 *key, struct xdp_rule *rule, struct
 
 SEC("xdp")
 int xdp_prod_func(struct xdp_md *ctx) {
-    __u32 outer_key = 1234;
-    struct ipset_inner_map *inner_map = bpf_map_lookup_elem(&ipset_map, &outer_key);
-    if (inner_map) {
-        struct ipv4_lpm_key inner_key = {
-            .prefixlen = 32,
-            .data = 2130706433,
-        };
-        struct ipv4_lpm_val *inner_val = bpf_map_lookup_elem(inner_map, &inner_key);
-        if (inner_val) {
-            __bpf_printk("ip: %u, mask: %u", inner_val->addr, inner_val->mask);
-        }
-    }
+    // __u32 outer_key = 1234;
+    // struct ipset_inner_map *inner_map = bpf_map_lookup_elem(&ipset_map, &outer_key);
+    // if (inner_map) {
+    //     struct ipv4_lpm_key inner_key = {
+    //         .prefixlen = 32,
+    //         .data = 2130706433,
+    //     };
+    //     struct ipv4_lpm_val *inner_val = bpf_map_lookup_elem(inner_map, &inner_key);
+    //     if (inner_val) {
+    //         __bpf_printk("ip: %u, mask: %u", inner_val->addr, inner_val->mask);
+    //     }
+    // }
 
-    return XDP_PASS;
+    // return XDP_PASS;
 
     void *data = (void *)(long)ctx->data;
     void *data_end = (void *)(long)ctx->data_end;

@@ -1,4 +1,4 @@
-package xdp
+package xdpwall
 
 import (
 	"fmt"
@@ -133,9 +133,6 @@ func echoClientUDP(addr, msg string) {
 }
 
 func loadXdp(ruleFile string) {
-	xdpProg := NewXdp("lo", nil)
-	xdpProg.Run()
-
 	// ruleSet, err := trafficbus.LoadRuleSetFromJSON(ruleFile)
 	// if err != nil {
 	// 	log.Fatal("failed to load rule from json: ", err)
@@ -153,7 +150,7 @@ func loadXdp(ruleFile string) {
 	// }
 }
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -type ipset_type -target amd64 bpf xdp.c -- -I../include
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -type ipset_direction -target amd64 bpf xdpwall.c -- -I../include
 func TestXdp(t *testing.T) {
 	go echoServerTCP(":8080")
 	go echoServerUDP(":8081")
@@ -162,9 +159,7 @@ func TestXdp(t *testing.T) {
 		ticker := time.NewTicker(2 * time.Second)
 		for range ticker.C {
 			go echoClientTCP("127.0.0.1:8080", "hello TCP")
-			// go echoClientTCP("192.168.0.10:8080", "hello TCP")
 			go echoClientUDP("127.0.0.1:8081", "hello UDP")
-			// go echoClientUDP("192.168.0.10:8081", "hello UDP")
 		}
 	}()
 

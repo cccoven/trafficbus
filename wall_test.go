@@ -5,12 +5,16 @@ import (
 )
 
 func TestIPSet(t *testing.T) {
-	store := NewRuleStorage()
+	store := NewWall()
 	setName := "myset"
+
+	store.SetIPSet(setName, &IPSetEntry{
+		Name: setName,
+	})
 
 	store.AppendIP(setName, "1.1.1.1/0", "2.2.2.2")
 	if len(store.GetIPSet(setName).Addrs) != 2 {
-		t.Fatal("the rule length should be 2")
+		t.Fatal("the ipset length should be 2")
 	}
 
 	addrs := store.GetIPSet(setName).Addrs
@@ -20,17 +24,17 @@ func TestIPSet(t *testing.T) {
 
 	store.DelIP(setName, "2.2.2.2")
 	if len(store.GetIPSet(setName).Addrs) != 1 {
-		t.Fatal("the rule length should be 1")
+		t.Fatal("the ipset length should be 1")
 	}
 
-	store.ClearIPSet(setName)
-	if len(store.GetIPSet(setName).Addrs) != 0 {
-		t.Fatal("the rule length should be 0")
+	store.DelIPSet(setName)
+	if store.GetIPSet(setName) != nil {
+		t.Fatal("the ipset length should be nil")
 	}
 }
 
 func TestRuleSet(t *testing.T) {
-	store := NewRuleStorage()
+	store := NewWall()
 	iface := "lo"
 
 	store.InsertRule(iface, 0, &Rule{Num: 1, Target: "A"})
@@ -63,9 +67,26 @@ func TestRuleSet(t *testing.T) {
 		t.Fatal("wrong rule content")
 	}
 
-	store.ClearRules(iface)
+	store.DelRules(iface)
 
 	if len(store.GetRules(iface)) != 0 {
 		t.Fatal("the rule length should be 0")
+	}
+}
+
+func TestLoadFromJSON(t *testing.T) {
+	s := NewWall()
+
+	err := s.LoadFromJSON("./testdata/rule.json")
+	if err != nil {
+		t.Error(err)
+	}
+
+	if s.GetIPSet("myset") == nil {
+		t.Fatal("nil ipset")
+	}
+
+	if s.GetRules("lo") == nil {
+		t.Error("nil rules")
 	}
 }

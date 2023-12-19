@@ -1,11 +1,14 @@
 {
-    "ip_sets": [
+    "ipSets": [
         {
             "name": "myset",
-            "addrs": ["127.0.0.1/8", "192.168.0.10"]
+            "addrs": [
+                "127.0.0.1/8",
+                "192.168.0.10"
+            ]
         }
     ],
-    "rule_sets": [
+    "ruleSets": [
         {
             "iface": "lo",
             "rules": [
@@ -14,7 +17,8 @@
                     "target": "DROP",
                     "protocol": "ICMP",
                     "source": "",
-                    "destination": ""
+                    "destination": "",
+                    "matchExtension": {}
                 },
                 {
                     "num": 2,
@@ -22,13 +26,14 @@
                     "protocol": "TCP",
                     "source": "0.0.0.0/0",
                     "destination": "0.0.0.0",
-                    "match_extension": {
+                    "matchExtension": {
+                        "enable": 1,
                         "set": {
                             "name": "myset",
-                            "type": "DST"
+                            "direction": "DST"
                         },
                         "tcp": {
-                            "dst_port": 8080
+                            "dstPort": 8080
                         }
                     }
                 },
@@ -38,9 +43,10 @@
                     "protocol": "UDP",
                     "source": "0.0.0.0/0",
                     "destination": "0.0.0.0",
-                    "match_extension": {
+                    "matchExtension": {
+                        "enable": 1,
                         "udp": {
-                            "dst_port": 8081
+                            "dstPort": 8081
                         }
                     }
                 }
