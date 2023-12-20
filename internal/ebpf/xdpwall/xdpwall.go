@@ -1,18 +1,20 @@
 package xdpwall
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"sync"
 
 	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/btf"
 	"github.com/cilium/ebpf/link"
 )
 
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -type ipset_direction -target amd64 bpf xdpwall.c -- -I../include
 
 type XdpWall struct {
-	ipSets map[uint32][]IPSetKV
+	ipSets map[string][]IPSetKV
 	rules  map[string][]Rule
 
 	objs  bpfObjects
@@ -22,7 +24,7 @@ type XdpWall struct {
 
 func NewXdpWall() *XdpWall {
 	x := &XdpWall{
-		ipSets: make(map[uint32][]IPSetKV),
+		ipSets: make(map[string][]IPSetKV),
 		rules:  make(map[string][]Rule),
 		links:  make(map[string]link.Link),
 	}
@@ -30,30 +32,6 @@ func NewXdpWall() *XdpWall {
 	x.loadObjects()
 
 	return x
-}
-
-func (w *XdpWall) SetIPSet(setID uint32, kvs []IPSetKV) {
-	w.ipSets[setID] = kvs
-}
-
-func (w *XdpWall) GetIPSet(setID uint32) []IPSetKV {
-	return w.ipSets[setID]
-}
-
-func (w *XdpWall) DelIPSet(setID uint32) {
-	delete(w.ipSets, setID)
-}
-
-func (w *XdpWall) SetRules(iface string, rules []Rule) {
-	w.rules[iface] = rules
-}
-
-func (w *XdpWall) GetRules(iface string) []Rule {
-	return w.rules[iface]
-}
-
-func (w *XdpWall) DelRules(iface string) {
-	delete(w.rules, iface)
 }
 
 func (x *XdpWall) loadIPSet(outerMap *ebpf.Map, innerMap *ebpf.Map) error {
@@ -152,81 +130,123 @@ func (x *XdpWall) detach(iface string) {
 	if !ok {
 		return
 	}
-
 	l.Close()
 	delete(x.links, iface)
-
 	log.Printf("Detached XDP program to iface %q", iface)
 }
 
-func (x *XdpWall) loadRuleMap(iface string, rules []Rule) {
-	keys := make([]uint32, len(rules))
-	values := make([]bpfXdpRule, len(rules))
+func (x *XdpWall) getRuleKvs(iface string, pos int) ([]uint32, []Rule) {
+	keys := []uint32{}
+	for i := pos; i < len(x.rules[iface]); i++ {
+		keys = append(keys, uint32(i))
+	}
+	return keys, x.rules[iface][pos:]
+}
 
-	// load rule map
-	for i, rule := range rules {
-		keys[i] = uint32(rule.Num)
-		values[i] = bpfXdpRule(rule)
+// InsertRule insert a rule into a specified position
+func (x *XdpWall) InsertRule(iface string, pos int, rule Rule) error {
+	if pos < 0 {
+		return fmt.Errorf("invalid position %d", pos)
+	}
+	rules, ok := x.rules[iface]
+	if pos > len(rules) {
+		return fmt.Errorf("position %d is out of range", pos)
 	}
 
-	_, err := x.objs.RuleMap.BatchUpdate(keys, values, nil)
+	if !ok || pos == len(rules) {
+		// add to the end
+		x.rules[iface] = append(x.rules[iface], rule)
+	} else {
+		// add to the `pos` position
+		x.rules[iface] = append(x.rules[iface], Rule{})
+		copy(x.rules[iface][pos+1:], x.rules[iface][pos:])
+		x.rules[iface][pos] = rule
+	}
+
+	// batch update map.
+	// only the rules that need to be changed are updated here
+	keys, values := x.getRuleKvs(iface, pos)
+	return x.updateRules(iface, keys, values)
+}
+
+// updateRules batch update the rule map.
+// keys and values must correspond one to one
+func (x *XdpWall) updateRules(iface string, keys []uint32, rules []Rule) error {
+	if len(keys) != len(rules) {
+		return fmt.Errorf("the length of keys and values are different")
+	}
+
+	dev, err := net.InterfaceByName(iface)
 	if err != nil {
-		log.Fatalf("failed to load rule map, iface: %s", iface)
+		return err
 	}
+
+	// innerMap, err := x.objs.RuleInnerMap.Clone()
+	// if err != nil {
+	// 	return err
+	// }
+
+	// _, err = innerMap.BatchUpdate(keys, rules, nil)
+	// if err != nil {
+	// 	return err
+	// }
+	// err = x.objs.RuleMap.Update(uint32(dev.Index), innerMap, ebpf.UpdateAny)
+	// if err != nil {
+	// 	return err
+	// }
+
+	innerMapSpec := &ebpf.MapSpec{
+		Name:    "rule_inner_map",
+		Type:    ebpf.Array,
+		KeySize: 4,
+		Value:   &btf.Void{},
+		// ValueSize:  uint32(unsafe.Sizeof(rules[0])),
+		MaxEntries: 1,
+		Flags:      0x1000,
+	}
+	innerMapSpec.Contents = make([]ebpf.MapKV, 1)
+	for i := range innerMapSpec.Contents {
+		innerMapSpec.Contents[uint32(i)] = ebpf.MapKV{Key: uint32(i), Value: rules[0]}
+	}
+	innerMap, err := ebpf.NewMap(innerMapSpec)
+	if err != nil {
+		return err
+	}
+	err = x.objs.RuleMap.Update(uint32(dev.Index), innerMap, ebpf.UpdateAny)
+	if err != nil {
+		return err
+	}
+
+	// _, err = x.objs.RuleInnerMap.BatchUpdate(keys, rules, nil)
+	// if err != nil {
+	// 	return err
+	// }
+	// err = x.objs.RuleMap.Update(uint32(dev.Index), x.objs.RuleInnerMap, ebpf.UpdateAny)
+	// if err != nil {
+	// 	return err
+	// }
+
+	return nil
 }
 
-func (x *XdpWall) updateRule(iface string, rule Rule) error {
-	return x.objs.RuleMap.Update(rule.Num, bpfXdpRule(rule), ebpf.UpdateAny)
+func (x *XdpWall) DeleteRule(iface string, pos int) error {
+	// if pos < 0 {
+	// 	return fmt.Errorf("invalid position %d", pos)
+	// }
+	// rules, ok := x.rules[iface]
+	// if pos > len(rules) {
+	// 	return fmt.Errorf("position %d is out of range", pos)
+	// }
+
+	return nil
 }
 
-func (x *XdpWall) deleteRule(iface string, ruleNum uint32) {
-	
-} 
+func (x *XdpWall) DeleteRuleMap(iface string, key uint32) error {
+	return x.objs.RuleMap.Delete(key)
+}
 
 func (x *XdpWall) Run() {
-	for iface, rules := range x.rules {
-		x.loadRuleMap(iface, rules)
+	for iface := range x.rules {
 		go x.attach(iface)
 	}
 }
-
-// func (x *XdpWall) Run() {
-// 	iface, err := net.InterfaceByName(x.iface)
-// 	if err != nil {
-// 		log.Fatalf("lookup network iface %q: %s", x.iface, err)
-// 	}
-
-// 	// Load pre-compiled programs into the kernel.
-// 	objs := bpfObjects{}
-// 	if err := loadBpfObjects(&objs, nil); err != nil {
-// 		log.Fatalf("loading objects: %s", err)
-// 	}
-// 	defer objs.Close()
-
-// 	err = x.loadIPSet(objs.IpsetMap, objs.IpsetInnerMap)
-// 	if err != nil {
-// 		log.Fatalf("failed to load ipset to map: %s", err.Error())
-// 	}
-
-// 	err = x.loadRules(objs.RuleMap)
-// 	if err != nil {
-// 		log.Fatalf("failed to load rules to map: %s", err.Error())
-// 	}
-
-// 	// Attach the program.
-// 	l, err := link.AttachXDP(link.XDPOptions{
-// 		Program:   objs.XdpProdFunc,
-// 		Interface: iface.Index,
-// 	})
-// 	if err != nil {
-// 		log.Fatalf("could not attach XDP program: %s", err)
-// 	}
-// 	defer l.Close()
-
-// 	// log.Printf("Attached XDP program to iface %q (index %d)", iface.Name, iface.Index)
-// 	// log.Printf("Press Ctrl-C to exit and remove the program")
-
-// 	// for {
-// 	// 	time.Sleep(time.Second)
-// 	// }
-// }

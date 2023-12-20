@@ -6,7 +6,6 @@ import (
 	"hash/fnv"
 	"os"
 
-	"github.com/cccoven/trafficbus/internal"
 	"github.com/cccoven/trafficbus/internal/ebpf/xdpwall"
 )
 
@@ -94,40 +93,40 @@ func (w *Wall) str2hash(s string) uint32 {
 }
 
 func (w *Wall) syncXdpIPSet(setName string) error {
-	entry := w.GetIPSet(setName)
-	nameh := w.str2hash(setName)
-	if entry == nil {
-		// delete ipset
-		w.xdp.DelIPSet(nameh)
-		return nil
-	}
+	// entry := w.GetIPSet(setName)
+	// nameh := w.str2hash(setName)
+	// if entry == nil {
+	// 	// delete ipset
+	// 	w.xdp.DelIPSet(nameh)
+	// 	return nil
+	// }
 
-	var kvs []xdpwall.IPSetKV
-	if len(entry.Addrs) == 0 {
-		// clear ipset
-		w.xdp.SetIPSet(nameh, kvs)
-		return nil
-	}
+	// var kvs []xdpwall.IPSetKV
+	// if len(entry.Addrs) == 0 {
+	// 	// clear ipset
+	// 	w.xdp.SetIPSet(nameh, kvs)
+	// 	return nil
+	// }
 
-	for _, addr := range entry.Addrs {
-		ip, mask, err := internal.ParseV4CIDRU32(addr)
-		if err != nil {
-			return err
-		}
-		kv := xdpwall.IPSetKV{
-			Key: xdpwall.IPSetKey{
-				Prefixlen: 32,
-				Data:      ip,
-			},
-			Value: xdpwall.IPSetVal{
-				Addr: ip,
-				Mask: mask,
-			},
-		}
-		kvs = append(kvs, kv)
-	}
+	// for _, addr := range entry.Addrs {
+	// 	ip, mask, err := internal.ParseV4CIDRU32(addr)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	kv := xdpwall.IPSetKV{
+	// 		Key: xdpwall.IPSetKey{
+	// 			Prefixlen: 32,
+	// 			Data:      ip,
+	// 		},
+	// 		Value: xdpwall.IPSetVal{
+	// 			Addr: ip,
+	// 			Mask: mask,
+	// 		},
+	// 	}
+	// 	kvs = append(kvs, kv)
+	// }
 
-	w.xdp.SetIPSet(nameh, kvs)
+	// w.xdp.SetIPSet(nameh, kvs)
 
 	return nil
 }

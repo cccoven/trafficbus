@@ -61,7 +61,6 @@ struct target_ext {};
 // common rule
 struct xdp_rule {
     int enable;
-    u32 num;
     u64 pkts;
     u64 bytes;
     u32 target;
@@ -101,18 +100,27 @@ struct ipset_inner_map {
 struct {
     __uint(type, BPF_MAP_TYPE_HASH_OF_MAPS);
     __uint(max_entries, MAX_IPSET);
-    __type(key, __u32);
+    __type(key, __u32); // ipset name(id)
     __array(values, struct ipset_inner_map);
 } ipset_map SEC(".maps") = {
     .values = { &ipset_inner_map }
 };
 
-struct {
+struct rule_inner_map {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
 	__uint(max_entries, MAX_RULES);
     __type(key, __u32);
     __type(value, struct xdp_rule);
-} rule_map SEC(".maps");
+} rule_inner_map SEC(".maps");
+
+struct rule_map {
+    __uint(type, BPF_MAP_TYPE_ARRAY_OF_MAPS);
+    __uint(max_entries, 50);
+    __type(key, __u32); // net interface index
+    __array(values, struct rule_inner_map);
+} rule_map SEC(".maps") = {
+    .values = { &rule_inner_map }
+};
 
 struct callback_ctx {
     struct xdp_md *xdp_data;
@@ -229,7 +237,7 @@ static __u64 traverse_rules(void *map, __u32 *key, struct xdp_rule *rule, struct
         return 1;
     }
 
-    __bpf_printk("num: %u, target: %u, protocol: %u", rule->num, rule->target, rule->protocol);
+    __bpf_printk("index: %u, target: %u, protocol: %u", *key, rule->target, rule->protocol);
     return 0;
 
     if (ctx->ip) {
@@ -277,23 +285,14 @@ static __u64 traverse_rules(void *map, __u32 *key, struct xdp_rule *rule, struct
 
 SEC("xdp")
 int xdp_prod_func(struct xdp_md *ctx) {
-    __bpf_printk("ingress index: %u", ctx->ingress_ifindex);
-    return XDP_PASS;
-    
-    // __u32 outer_key = 1234;
-    // struct ipset_inner_map *inner_map = bpf_map_lookup_elem(&ipset_map, &outer_key);
-    // if (inner_map) {
-    //     struct ipv4_lpm_key inner_key = {
-    //         .prefixlen = 32,
-    //         .data = 2130706433,
-    //     };
-    //     struct ipv4_lpm_val *inner_val = bpf_map_lookup_elem(inner_map, &inner_key);
-    //     if (inner_val) {
-    //         __bpf_printk("ip: %u, mask: %u", inner_val->addr, inner_val->mask);
-    //     }
-    // }
-
-    // return XDP_PASS;
+    struct rule_map *outermap = &rule_map;
+    __u32 outerkey = ctx->ingress_ifindex;
+    struct rule_inner_map *innermap = bpf_map_lookup_elem(outermap, &outerkey);
+    // no rules for this interface
+    if (!innermap) {
+        __bpf_printk("iface %u has no rules", outerkey);
+        return XDP_PASS;
+    }
 
     void *data = (void *)(long)ctx->data;
     void *data_end = (void *)(long)ctx->data_end;
@@ -340,7 +339,7 @@ int xdp_prod_func(struct xdp_md *ctx) {
         cbstack.tcp = tcp;
     }
 
-    bpf_for_each_map_elem(&rule_map, traverse_rules, &cbstack, BPF_ANY);
+    bpf_for_each_map_elem(innermap, traverse_rules, &cbstack, BPF_ANY);
 
 done:
     return cbstack.action;

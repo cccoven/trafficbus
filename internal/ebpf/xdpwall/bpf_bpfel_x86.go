@@ -50,7 +50,7 @@ const (
 
 type bpfXdpRule struct {
 	Enable          int32
-	Num             uint32
+	_               [4]byte
 	Pkts            uint64
 	Bytes           uint64
 	Target          uint32
@@ -132,6 +132,7 @@ type bpfProgramSpecs struct {
 type bpfMapSpecs struct {
 	IpsetInnerMap *ebpf.MapSpec `ebpf:"ipset_inner_map"`
 	IpsetMap      *ebpf.MapSpec `ebpf:"ipset_map"`
+	RuleInnerMap  *ebpf.MapSpec `ebpf:"rule_inner_map"`
 	RuleMap       *ebpf.MapSpec `ebpf:"rule_map"`
 }
 
@@ -156,6 +157,7 @@ func (o *bpfObjects) Close() error {
 type bpfMaps struct {
 	IpsetInnerMap *ebpf.Map `ebpf:"ipset_inner_map"`
 	IpsetMap      *ebpf.Map `ebpf:"ipset_map"`
+	RuleInnerMap  *ebpf.Map `ebpf:"rule_inner_map"`
 	RuleMap       *ebpf.Map `ebpf:"rule_map"`
 }
 
@@ -163,6 +165,7 @@ func (m *bpfMaps) Close() error {
 	return _BpfClose(
 		m.IpsetInnerMap,
 		m.IpsetMap,
+		m.RuleInnerMap,
 		m.RuleMap,
 	)
 }
