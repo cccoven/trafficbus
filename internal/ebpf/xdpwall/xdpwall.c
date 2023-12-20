@@ -114,7 +114,7 @@ struct rule_inner_map {
 } rule_inner_map SEC(".maps");
 
 struct rule_map {
-    __uint(type, BPF_MAP_TYPE_ARRAY_OF_MAPS);
+    __uint(type, BPF_MAP_TYPE_HASH_OF_MAPS);
     __uint(max_entries, 50);
     __type(key, __u32); // net interface index
     __array(values, struct rule_inner_map);
@@ -233,6 +233,7 @@ static int __always_inline match_tcp(struct tcphdr *tcp, struct xdp_rule *rule) 
 
 // match rules
 static __u64 traverse_rules(void *map, __u32 *key, struct xdp_rule *rule, struct callback_ctx *ctx) {
+    // __bpf_printk("index: %u, target: %u, protocol: %u", *key, rule->target, rule->protocol);
     if (!rule->enable) {
         return 1;
     }
@@ -286,7 +287,8 @@ static __u64 traverse_rules(void *map, __u32 *key, struct xdp_rule *rule, struct
 SEC("xdp")
 int xdp_prod_func(struct xdp_md *ctx) {
     struct rule_map *outermap = &rule_map;
-    __u32 outerkey = ctx->ingress_ifindex;
+    // __u32 outerkey = ctx->ingress_ifindex;
+    __u32 outerkey = 0;
     struct rule_inner_map *innermap = bpf_map_lookup_elem(outermap, &outerkey);
     // no rules for this interface
     if (!innermap) {

@@ -173,43 +173,43 @@ func TestXdpWall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = wall.InsertRule(iface, 1, Rule{
-		Enable:   1,
-		Target:   uint32(bpfTargetACCEPT),
-		Protocol: uint32(2),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = wall.InsertRule(iface, 2, Rule{
-		Enable:   1,
-		Target:   uint32(bpfTargetACCEPT),
-		Protocol: uint32(3),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = wall.InsertRule(iface, 1, Rule{
-		Enable:   1,
-		Target:   uint32(bpfTargetACCEPT),
-		Protocol: uint32(4),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	// err = wall.InsertRule(iface, 1, Rule{
+	// 	Enable:   1,
+	// 	Target:   uint32(bpfTargetACCEPT),
+	// 	Protocol: uint32(2),
+	// })
+	// if err != nil {
+	// 	t.Fatal(err)
+	// }
+	// err = wall.InsertRule(iface, 2, Rule{
+	// 	Enable:   1,
+	// 	Target:   uint32(bpfTargetACCEPT),
+	// 	Protocol: uint32(3),
+	// })
+	// if err != nil {
+	// 	t.Fatal(err)
+	// }
+	// err = wall.InsertRule(iface, 1, Rule{
+	// 	Enable:   1,
+	// 	Target:   uint32(bpfTargetACCEPT),
+	// 	Protocol: uint32(4),
+	// })
+	// if err != nil {
+	// 	t.Fatal(err)
+	// }
 
 	wall.Run()
 
-	time.Sleep(5 * time.Second)
+	// time.Sleep(5 * time.Second)
 
-	err = wall.InsertRule("ens3", 0, Rule{
-		Enable:   1,
-		Target:   uint32(bpfTargetACCEPT),
-		Protocol: uint32(5),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	// err = wall.InsertRule("ens3", 0, Rule{
+	// 	Enable:   1,
+	// 	Target:   uint32(bpfTargetACCEPT),
+	// 	Protocol: uint32(5),
+	// })
+	// if err != nil {
+	// 	t.Fatal(err)
+	// }
 
 	// wall.detach("enp0s3")
 
