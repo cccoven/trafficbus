@@ -150,7 +150,7 @@ func loadXdp(ruleFile string) {
 	// }
 }
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -type ipset_direction -target amd64 bpf xdpwall.c -- -I../include
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -type ipset_direction -type ipset_item -type rule_item -target amd64 bpf xdpwall.c -- -I../include
 func TestXdpWall(t *testing.T) {
 	go echoServerTCP(":8080")
 	go echoServerUDP(":8081")
@@ -172,8 +172,7 @@ func TestXdpWall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	err = wall.InsertRule("ens3", 0, Rule{
+	err = wall.InsertRule("lo", 1, Rule{
 		Enable:   1,
 		Target:   uint32(bpfTargetACCEPT),
 		Protocol: uint32(2),
@@ -181,44 +180,45 @@ func TestXdpWall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	err = wall.InsertRule("lo", 2, Rule{
+		Enable:   1,
+		Target:   uint32(bpfTargetACCEPT),
+		Protocol: uint32(3),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = wall.InsertRule("lo", 1, Rule{
+		Enable:   1,
+		Target:   uint32(bpfTargetACCEPT),
+		Protocol: uint32(4),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = wall.InsertRule("lo", 0, Rule{
+		Enable:   1,
+		Target:   uint32(bpfTargetACCEPT),
+		Protocol: uint32(5),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	// err = wall.InsertRule(iface, 1, Rule{
-	// 	Enable:   1,
-	// 	Target:   uint32(bpfTargetACCEPT),
-	// 	Protocol: uint32(2),
-	// })
-	// if err != nil {
-	// 	t.Fatal(err)
-	// }
-	// err = wall.InsertRule(iface, 2, Rule{
-	// 	Enable:   1,
-	// 	Target:   uint32(bpfTargetACCEPT),
-	// 	Protocol: uint32(3),
-	// })
-	// if err != nil {
-	// 	t.Fatal(err)
-	// }
-	// err = wall.InsertRule(iface, 1, Rule{
-	// 	Enable:   1,
-	// 	Target:   uint32(bpfTargetACCEPT),
-	// 	Protocol: uint32(4),
-	// })
-	// if err != nil {
-	// 	t.Fatal(err)
-	// }
+	wall.attach(1)
 
-	wall.Run()
+	time.Sleep(5 * time.Second)
 
-	// time.Sleep(5 * time.Second)
+	err = wall.InsertRule("enp0s3", 0, Rule{
+		Enable:   1,
+		Target:   uint32(bpfTargetACCEPT),
+		Protocol: uint32(10),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	// err = wall.InsertRule("ens3", 0, Rule{
-	// 	Enable:   1,
-	// 	Target:   uint32(bpfTargetACCEPT),
-	// 	Protocol: uint32(5),
-	// })
-	// if err != nil {
-	// 	t.Fatal(err)
-	// }
+	wall.attach(2)
 
 	// wall.detach("enp0s3")
 

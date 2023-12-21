@@ -19,15 +19,12 @@ const (
 	bpfIpsetDirectionDST bpfIpsetDirection = 1
 )
 
-type bpfIpv4LpmKey struct {
-	Prefixlen uint32
-	Data      uint32
-}
-
-type bpfIpv4LpmVal struct {
+type bpfIpsetItem struct {
 	Addr uint32
 	Mask uint32
 }
+
+type bpfIpsets struct{ Items [255]bpfIpsetItem }
 
 type bpfProtocol uint32
 
@@ -37,20 +34,7 @@ const (
 	bpfProtocolTCP  bpfProtocol = 6
 )
 
-type bpfTarget uint32
-
-const (
-	bpfTargetABORTED bpfTarget = 0
-	bpfTargetDROP    bpfTarget = 1
-	bpfTargetACCEPT  bpfTarget = 2
-	bpfTargetTX      bpfTarget = 3
-	bpfTargetFORWARD bpfTarget = 4
-	bpfTargetLOG     bpfTarget = 5
-)
-
-type bpfTest struct{ Rules [10]bpfXdpRule }
-
-type bpfXdpRule struct {
+type bpfRuleItem struct {
 	Enable          int32
 	_               [4]byte
 	Pkts            uint64
@@ -78,11 +62,29 @@ type bpfXdpRule struct {
 			Sport  uint16
 			Dport  uint16
 		}
-		Multiport [65535]uint16
+		Multiport uint16
 		_         [2]byte
 	}
 	TargetExt struct{}
+	_         [4]byte
 }
+
+type bpfRules struct {
+	Items [100]bpfRuleItem
+	Count int32
+	_     [4]byte
+}
+
+type bpfTarget uint32
+
+const (
+	bpfTargetABORTED bpfTarget = 0
+	bpfTargetDROP    bpfTarget = 1
+	bpfTargetACCEPT  bpfTarget = 2
+	bpfTargetTX      bpfTarget = 3
+	bpfTargetFORWARD bpfTarget = 4
+	bpfTargetLOG     bpfTarget = 5
+)
 
 // loadBpf returns the embedded CollectionSpec for bpf.
 func loadBpf() (*ebpf.CollectionSpec, error) {
@@ -125,19 +127,15 @@ type bpfSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type bpfProgramSpecs struct {
-	XdpProdFunc *ebpf.ProgramSpec `ebpf:"xdp_prod_func"`
+	XdpWallFunc *ebpf.ProgramSpec `ebpf:"xdp_wall_func"`
 }
 
 // bpfMapSpecs contains maps before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type bpfMapSpecs struct {
-	IpsetInnerMap *ebpf.MapSpec `ebpf:"ipset_inner_map"`
-	IpsetMap      *ebpf.MapSpec `ebpf:"ipset_map"`
-	RuleInnerMap  *ebpf.MapSpec `ebpf:"rule_inner_map"`
-	RuleInnerMap2 *ebpf.MapSpec `ebpf:"rule_inner_map2"`
-	RuleMap       *ebpf.MapSpec `ebpf:"rule_map"`
-	TestMap       *ebpf.MapSpec `ebpf:"test_map"`
+	IpsetMap *ebpf.MapSpec `ebpf:"ipset_map"`
+	RuleMap  *ebpf.MapSpec `ebpf:"rule_map"`
 }
 
 // bpfObjects contains all objects after they have been loaded into the kernel.
@@ -159,22 +157,14 @@ func (o *bpfObjects) Close() error {
 //
 // It can be passed to loadBpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type bpfMaps struct {
-	IpsetInnerMap *ebpf.Map `ebpf:"ipset_inner_map"`
-	IpsetMap      *ebpf.Map `ebpf:"ipset_map"`
-	RuleInnerMap  *ebpf.Map `ebpf:"rule_inner_map"`
-	RuleInnerMap2 *ebpf.Map `ebpf:"rule_inner_map2"`
-	RuleMap       *ebpf.Map `ebpf:"rule_map"`
-	TestMap       *ebpf.Map `ebpf:"test_map"`
+	IpsetMap *ebpf.Map `ebpf:"ipset_map"`
+	RuleMap  *ebpf.Map `ebpf:"rule_map"`
 }
 
 func (m *bpfMaps) Close() error {
 	return _BpfClose(
-		m.IpsetInnerMap,
 		m.IpsetMap,
-		m.RuleInnerMap,
-		m.RuleInnerMap2,
 		m.RuleMap,
-		m.TestMap,
 	)
 }
 
@@ -182,12 +172,12 @@ func (m *bpfMaps) Close() error {
 //
 // It can be passed to loadBpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type bpfPrograms struct {
-	XdpProdFunc *ebpf.Program `ebpf:"xdp_prod_func"`
+	XdpWallFunc *ebpf.Program `ebpf:"xdp_wall_func"`
 }
 
 func (p *bpfPrograms) Close() error {
 	return _BpfClose(
-		p.XdpProdFunc,
+		p.XdpWallFunc,
 	)
 }
 

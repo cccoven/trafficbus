@@ -1,13 +1,7 @@
 package xdpwall
 
-type Rule bpfXdpRule
-type IPSetKey bpfIpv4LpmKey
-type IPSetVal bpfIpv4LpmVal
-
-type IPSetKV struct {
-	Key   IPSetKey
-	Value IPSetVal
-}
+type IPSet bpfIpsetItem
+type Rule bpfRuleItem
 
 var (
 	TargetMap = map[string]bpfTarget{
