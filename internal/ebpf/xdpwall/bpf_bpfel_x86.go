@@ -48,6 +48,8 @@ const (
 	bpfTargetLOG     bpfTarget = 5
 )
 
+type bpfTest struct{ Rules [10]bpfXdpRule }
+
 type bpfXdpRule struct {
 	Enable          int32
 	_               [4]byte
@@ -133,7 +135,9 @@ type bpfMapSpecs struct {
 	IpsetInnerMap *ebpf.MapSpec `ebpf:"ipset_inner_map"`
 	IpsetMap      *ebpf.MapSpec `ebpf:"ipset_map"`
 	RuleInnerMap  *ebpf.MapSpec `ebpf:"rule_inner_map"`
+	RuleInnerMap2 *ebpf.MapSpec `ebpf:"rule_inner_map2"`
 	RuleMap       *ebpf.MapSpec `ebpf:"rule_map"`
+	TestMap       *ebpf.MapSpec `ebpf:"test_map"`
 }
 
 // bpfObjects contains all objects after they have been loaded into the kernel.
@@ -158,7 +162,9 @@ type bpfMaps struct {
 	IpsetInnerMap *ebpf.Map `ebpf:"ipset_inner_map"`
 	IpsetMap      *ebpf.Map `ebpf:"ipset_map"`
 	RuleInnerMap  *ebpf.Map `ebpf:"rule_inner_map"`
+	RuleInnerMap2 *ebpf.Map `ebpf:"rule_inner_map2"`
 	RuleMap       *ebpf.Map `ebpf:"rule_map"`
+	TestMap       *ebpf.Map `ebpf:"test_map"`
 }
 
 func (m *bpfMaps) Close() error {
@@ -166,7 +172,9 @@ func (m *bpfMaps) Close() error {
 		m.IpsetInnerMap,
 		m.IpsetMap,
 		m.RuleInnerMap,
+		m.RuleInnerMap2,
 		m.RuleMap,
+		m.TestMap,
 	)
 }
 

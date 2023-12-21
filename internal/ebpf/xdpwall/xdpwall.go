@@ -179,14 +179,31 @@ func (x *XdpWall) updateRules(iface string, keys []uint32, rules []Rule) error {
 	if err != nil {
 		return err
 	}
-	// _, err = x.objs.RuleInnerMap.BatchUpdate(keys, rules, nil)
-	// if err != nil {
-	// 	return err
-	// }
-	// err = x.objs.RuleMap.Update(uint32(dev.Index), x.objs.RuleInnerMap, ebpf.UpdateAny)
-	// if err != nil {
-	// 	return err
-	// }
+	log.Printf("iface: %s, index: %d", dev.Name, dev.Index)
+
+	t := &bpfTest{
+		Rules: [10]bpfXdpRule{bpfXdpRule(rules[0])},
+	}
+
+	err = x.objs.TestMap.Update(uint32(dev.Index), t, ebpf.UpdateAny)
+	if err != nil {
+		return err
+	}
+
+	return nil
+
+	_, err = x.objs.RuleInnerMap.BatchUpdate(keys, rules, nil)
+	if err != nil {
+		return err
+	}
+	err = x.objs.RuleMap.Update(uint32(dev.Index), x.objs.RuleInnerMap, ebpf.UpdateAny)
+	if err != nil {
+		return err
+	}
+
+	return nil
+
+	// testing...
 
 	innerMapInfo, err := x.objs.RuleInnerMap.Info()
 	if err != nil {
@@ -194,21 +211,29 @@ func (x *XdpWall) updateRules(iface string, keys []uint32, rules []Rule) error {
 	}
 
 	// create map
-	innerMapSpec := &ebpf.MapSpec{
-		Name:       innerMapInfo.Name,
-		Type:       innerMapInfo.Type,
-		KeySize:    innerMapInfo.KeySize,
-		ValueSize:  innerMapInfo.ValueSize,
-		MaxEntries: innerMapInfo.MaxEntries,
-		Flags:      innerMapInfo.Flags,
-		Contents:   make([]ebpf.MapKV, 1), // rules
-	}
-	for i, key := range keys {
-		innerMapSpec.Contents[uint32(i)] = ebpf.MapKV{
-			Key:   key,
-			Value: bpfXdpRule(rules[i]),
-		}
-	}
+	// innerMapSpec := &ebpf.MapSpec{
+	// 	Name:       innerMapInfo.Name,
+	// 	Type:       innerMapInfo.Type,
+	// 	KeySize:    innerMapInfo.KeySize,
+	// 	ValueSize:  innerMapInfo.ValueSize,
+	// 	MaxEntries: innerMapInfo.MaxEntries,
+	// 	Flags:      innerMapInfo.Flags,
+	// 	Contents:   make([]ebpf.MapKV, 1), // rules
+	// }
+	// for i, key := range keys {
+	// 	innerMapSpec.Contents[uint32(i)] = ebpf.MapKV{
+	// 		Key:   key,
+	// 		Value: bpfXdpRule(rules[i]),
+	// 	}
+	// }
+	// innerMap, err := ebpf.NewMap(innerMapSpec)
+	// if err != nil {
+	// 	return err
+	// }
+	// err = x.objs.RuleMap.Update(uint32(0), innerMap, ebpf.UpdateAny)
+	// if err != nil {
+	// 	return err
+	// }
 
 	// outerMapInfo, err := x.objs.RuleMap.Info()
 	// if err != nil {
@@ -221,18 +246,20 @@ func (x *XdpWall) updateRules(iface string, keys []uint32, rules []Rule) error {
 	// 	ValueSize:  outerMapInfo.ValueSize,
 	// 	MaxEntries: outerMapInfo.MaxEntries,
 	// 	Flags:      outerMapInfo.Flags,
-	// 	// Contents:   make([]ebpf.MapKV, 2),
+	// 	Contents:   make([]ebpf.MapKV, 2),
 	// 	InnerMap:   innerMapSpec,
 	// }
-
-	innerMap, err := ebpf.NewMap(innerMapSpec)
-	if err != nil {
-		return err
-	}
-
+	// outerMapSpec.Contents[uint32(0)] = ebpf.MapKV{
+	// 	Key:   uint32(dev.Index),
+	// 	Value: innerMap,
+	// }
+	// outerMapSpec.Contents[uint32(1)] = ebpf.MapKV{
+	// 	Key:   uint32(dev.Index),
+	// 	Value: innerMap,
+	// }
 	// for i := 0; i < 2; i++ {
 	// 	outerMapSpec.Contents[uint32(i)] = ebpf.MapKV{
-	// 		Key:   uint32(i),
+	// 		Key:   uint32(dev.Index),
 	// 		Value: innerMap,
 	// 	}
 	// }
@@ -247,15 +274,19 @@ func (x *XdpWall) updateRules(iface string, keys []uint32, rules []Rule) error {
 	// if err != nil {
 	// 	return err
 	// }
+	// err = outerMap.Update(uint32(1), innerMap, ebpf.UpdateAny)
+	// if err != nil {
+	// 	return err
+	// }
 
 	// outerMap, err := x.objs.bpfMaps.RuleMap.Clone()
 	// if err != nil {
 	// 	return err
 	// }
-	err = x.objs.RuleMap.Update(uint32(dev.Index), innerMap, ebpf.UpdateAny)
-	if err != nil {
-		return err
-	}
+	// err = x.objs.RuleMap.Update(uint32(dev.Index), innerMap, ebpf.UpdateAny)
+	// if err != nil {
+	// 	return err
+	// }
 
 	return nil
 }

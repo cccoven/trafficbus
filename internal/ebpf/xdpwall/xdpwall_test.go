@@ -164,8 +164,7 @@ func TestXdpWall(t *testing.T) {
 
 	wall := NewXdpWall()
 
-	iface := "lo"
-	err := wall.InsertRule(iface, 0, Rule{
+	err := wall.InsertRule("lo", 0, Rule{
 		Enable:   1,
 		Target:   uint32(bpfTargetACCEPT),
 		Protocol: uint32(1),
@@ -173,6 +172,16 @@ func TestXdpWall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	err = wall.InsertRule("ens3", 0, Rule{
+		Enable:   1,
+		Target:   uint32(bpfTargetACCEPT),
+		Protocol: uint32(2),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	// err = wall.InsertRule(iface, 1, Rule{
 	// 	Enable:   1,
 	// 	Target:   uint32(bpfTargetACCEPT),

@@ -111,15 +111,19 @@ struct rule_inner_map {
 	__uint(max_entries, MAX_RULES);
     __type(key, __u32);
     __type(value, struct xdp_rule);
-} rule_inner_map SEC(".maps");
+} rule_inner_map SEC(".maps"), rule_inner_map2 SEC(".maps");
 
 struct rule_map {
     __uint(type, BPF_MAP_TYPE_HASH_OF_MAPS);
     __uint(max_entries, 50);
-    __type(key, __u32); // net interface index
+    __uint(key_size, sizeof(__u32)); // net interface index
+    __uint(value_size, 4); // net interface index
     __array(values, struct rule_inner_map);
 } rule_map SEC(".maps") = {
-    .values = { &rule_inner_map }
+    .values = {
+        [1] = &rule_inner_map,
+        [2] = &rule_inner_map2,
+    }
 };
 
 struct callback_ctx {
@@ -284,11 +288,40 @@ static __u64 traverse_rules(void *map, __u32 *key, struct xdp_rule *rule, struct
     return hit;
 }
 
+struct test {
+    struct xdp_rule rules[10];
+};
+
+struct {
+	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, MAX_RULES);
+    __type(key, __u32);
+    __type(value, struct test);
+} test_map SEC(".maps");
+
 SEC("xdp")
 int xdp_prod_func(struct xdp_md *ctx) {
+
+    __u32 key = ctx->ingress_ifindex;
+    // __u32 key = 0;
+    struct test *test = bpf_map_lookup_elem(&test_map, &key);
+    if (test) {
+        for (int i = 0; i < sizeof(test->rules) / sizeof(struct xdp_rule); i++) {
+            struct xdp_rule rule = test->rules[i];
+            if (!rule.enable) {
+                continue;
+            }
+            __bpf_printk("index: %u, target: %u, protocol: %u", i, rule.target, rule.protocol);
+        }
+        
+        // __bpf_printk("sizeof: %d", sizeof(test->rules) / sizeof(struct xdp_rule));
+    }
+
+    return XDP_PASS;
+
     struct rule_map *outermap = &rule_map;
-    // __u32 outerkey = ctx->ingress_ifindex;
-    __u32 outerkey = 0;
+    __u32 outerkey = ctx->ingress_ifindex;
+    // __u32 outerkey = 0;
     struct rule_inner_map *innermap = bpf_map_lookup_elem(outermap, &outerkey);
     // no rules for this interface
     if (!innermap) {
