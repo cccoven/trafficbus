@@ -132,113 +132,62 @@ func echoClientUDP(addr, msg string) {
 	fmt.Printf("UDP %s response from server: %s\n", addr, string(buffer[:n]))
 }
 
-func loadXdp(ruleFile string) {
-	// ruleSet, err := trafficbus.LoadRuleSetFromJSON(ruleFile)
-	// if err != nil {
-	// 	log.Fatal("failed to load rule from json: ", err)
-	// }
-
-	// for _, item := range ruleSet {
-	// 	go func(rs trafficbus.RuleSet) {
-	// 		rules, err := ConvertToXdpRule(rs.Rules)
-	// 		if err != nil {
-	// 			log.Fatal("failed to convert rule: ", err)
-	// 		}
-	// 		xdpProg := NewXdp(rs.IFace, rules)
-	// 		xdpProg.Run()
-	// 	}(item)
-	// }
-}
-
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -type ipset_direction -type ipset_item -type rule_item -target amd64 bpf xdpwall.c -- -I../include
-func TestXdpWall(t *testing.T) {
+func runServers() {
 	go echoServerTCP(":8080")
 	go echoServerUDP(":8081")
 	go func() {
 		ticker := time.NewTicker(2 * time.Second)
 		for range ticker.C {
 			go echoClientTCP("127.0.0.1:8080", "hello TCP")
-			// go echoClientUDP("127.0.0.1:8081", "hello UDP")
+			go echoClientUDP("127.0.0.1:8081", "hello UDP")
 		}
 	}()
+}
 
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -type ipset_direction -type ipset_item -type rule_item -target amd64 bpf xdpwall.c -- -I../include
+func TestXdpWall(t *testing.T) {
+	runServers()
 	wall := NewXdpWall()
 
-	err := wall.InsertRule("lo", 0, Rule{
-		Enable:   1,
-		Target:   uint32(bpfTargetACCEPT),
-		Protocol: uint32(1),
-	})
-	if err != nil {
-		t.Fatal(err)
+	data := map[string][]Rule{
+		"lo": {
+			{
+				Enable:   1,
+				Target:   uint32(bpfTargetDROP),
+				Protocol: uint32(bpfProtocolICMP),
+			},
+			{
+				Enable:   1,
+				Target:   uint32(bpfTargetACCEPT),
+				Protocol: uint32(bpfProtocolTCP),
+			},
+			{
+				Enable:   1,
+				Target:   uint32(bpfTargetDROP),
+				Protocol: uint32(bpfProtocolUDP),
+			},
+		},
+		// "ens3": {},
 	}
-	err = wall.InsertRule("lo", 1, Rule{
-		Enable:   1,
-		Target:   uint32(bpfTargetACCEPT),
-		Protocol: uint32(2),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = wall.InsertRule("lo", 2, Rule{
-		Enable:   1,
-		Target:   uint32(bpfTargetACCEPT),
-		Protocol: uint32(3),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = wall.InsertRule("lo", 1, Rule{
-		Enable:   1,
-		Target:   uint32(bpfTargetACCEPT),
-		Protocol: uint32(4),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = wall.InsertRule("lo", 0, Rule{
-		Enable:   1,
-		Target:   uint32(bpfTargetACCEPT),
-		Protocol: uint32(5),
-	})
-	if err != nil {
-		t.Fatal(err)
+	data["lo"][1].MatchExt.Enable = 1
+	data["lo"][1].MatchExt.Tcp.Enable = 1
+	data["lo"][1].MatchExt.Tcp.Dport = 8080
+	data["lo"][2].MatchExt.Enable = 1
+	data["lo"][2].MatchExt.Udp.Enable = 1
+	data["lo"][2].MatchExt.Udp.Dport = 8081
+
+	for iface, rules := range data {
+		for i, rule := range rules {
+			err := wall.InsertRule(iface, i, rule)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 
-	wall.attach(1)
+	// wall.DeleteRule("lo", 2)
 
-	time.Sleep(5 * time.Second)
-
-	err = wall.InsertRule("enp0s3", 0, Rule{
-		Enable:   1,
-		Target:   uint32(bpfTargetACCEPT),
-		Protocol: uint32(10),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	wall.attach(2)
-
-	// wall.detach("enp0s3")
-
-	// // wall.detach("lo")
-	// err := wall.updateRule("lo", Rule{
-	// 	Enable:   1,
-	// 	Num:      0,
-	// 	Target:   uint32(bpfTargetACCEPT),
-	// 	Protocol: uint32(bpfProtocolTCP),
-	// })
-	// if err != nil {
-	// 	t.Error(err)
-	// }
-	// wall.attach("lo")
-
-	// wall.detach("lo")
-
-	// time.Sleep(5 * time.Second)
-
-	// wall.attach("lo")
+	wall.Attach("lo")
 
 	select {}
 }
