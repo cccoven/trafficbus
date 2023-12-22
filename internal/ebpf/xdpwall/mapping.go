@@ -21,6 +21,7 @@ var (
 	IPSetTypeMap = map[string]bpfIpsetDirection{
 		"SRC": bpfIpsetDirectionSRC,
 		"DST": bpfIpsetDirectionDST,
+		"BOTH": bpfIpsetDirectionBOTH,
 	}
 )
 

@@ -26,14 +26,15 @@ enum protocol {
 };
 
 enum ipset_direction {
-    SRC,
+    SRC = 1,
     DST,
+    BOTH,
 };
 
 struct set_ext {
     int enable;
     u32 id;
-    int direction;
+    enum ipset_direction direction;
 };
 
 // example: -p udp --dport 8080
@@ -65,8 +66,8 @@ struct rule_item {
     int enable;
     u64 pkts;
     u64 bytes;
-    u32 target;
-    u32 protocol;
+    enum target target;
+    enum protocol protocol;
     u32 source;
     u32 source_mask;
     u32 destination;
@@ -123,7 +124,7 @@ struct pktstack {
     struct iphdr *ip;
     struct udphdr *udp;
     struct tcphdr *tcp;
-    enum xdp_action action;
+    enum target action;
 };
 
 static __always_inline int parse_ethhdr(struct cursor *cur, void *data_end, struct ethhdr **eth) {
@@ -285,7 +286,7 @@ int xdp_wall_func(struct xdp_md *ctx) {
     void *data_end = (void *)(long)ctx->data_end;
     struct cursor cur = { .pos = data };
     struct pktstack pkt = {
-        .action = XDP_PASS,
+        .action = ACCEPT,
     };
 
     if (!parse_ethhdr(&cur, data_end, &pkt.eth)) {

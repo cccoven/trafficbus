@@ -15,8 +15,9 @@ import (
 type bpfIpsetDirection uint32
 
 const (
-	bpfIpsetDirectionSRC bpfIpsetDirection = 0
-	bpfIpsetDirectionDST bpfIpsetDirection = 1
+	bpfIpsetDirectionSRC  bpfIpsetDirection = 1
+	bpfIpsetDirectionDST  bpfIpsetDirection = 2
+	bpfIpsetDirectionBOTH bpfIpsetDirection = 3
 )
 
 type bpfIpsetItem struct {
@@ -39,8 +40,8 @@ type bpfRuleItem struct {
 	_               [4]byte
 	Pkts            uint64
 	Bytes           uint64
-	Target          uint32
-	Protocol        uint32
+	Target          bpfTarget
+	Protocol        bpfProtocol
 	Source          uint32
 	SourceMask      uint32
 	Destination     uint32
@@ -50,7 +51,7 @@ type bpfRuleItem struct {
 		Set    struct {
 			Enable    int32
 			Id        uint32
-			Direction int32
+			Direction bpfIpsetDirection
 		}
 		Udp struct {
 			Enable int32

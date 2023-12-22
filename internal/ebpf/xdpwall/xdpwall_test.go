@@ -153,18 +153,18 @@ func TestXdpWall(t *testing.T) {
 		"lo": {
 			{
 				Enable:   1,
-				Target:   uint32(bpfTargetDROP),
-				Protocol: uint32(bpfProtocolICMP),
+				Target:   bpfTargetDROP,
+				Protocol: bpfProtocolICMP,
 			},
 			{
 				Enable:   1,
-				Target:   uint32(bpfTargetACCEPT),
-				Protocol: uint32(bpfProtocolTCP),
+				Target:   bpfTargetACCEPT,
+				Protocol: bpfProtocolTCP,
 			},
 			{
 				Enable:   1,
-				Target:   uint32(bpfTargetDROP),
-				Protocol: uint32(bpfProtocolUDP),
+				Target:   bpfTargetDROP,
+				Protocol: bpfProtocolUDP,
 			},
 		},
 		// "ens3": {},
