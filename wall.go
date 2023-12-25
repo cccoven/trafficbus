@@ -3,19 +3,13 @@ package trafficbus
 import (
 	"encoding/json"
 	"fmt"
-	"hash/fnv"
 	"os"
 
 	"github.com/cccoven/trafficbus/internal/ebpf/xdpwall"
 )
 
-const (
-	MaxIPSet = 256
-	MaxRules = 3
-)
-
 var (
-	TargetMap = map[string]xdpwall.FilterTarget{
+	xdpTargetMap = map[string]xdpwall.FilterTarget{
 		"DROP":    xdpwall.FilterTargetDROP,
 		"ACCEPT":  xdpwall.FilterTargetACCEPT,
 		"TX":      xdpwall.FilterTargetTX,
@@ -23,25 +17,25 @@ var (
 		"LOG":     xdpwall.FilterTargetLOG,
 	}
 
-	ProtocolMap = map[string]xdpwall.FilterProtocol{
+	xdpProtocolMap = map[string]xdpwall.FilterProtocol{
 		"ICMP": xdpwall.FilterProtocolICMP,
 		"UDP":  xdpwall.FilterProtocolUDP,
 		"TCP":  xdpwall.FilterProtocolTCP,
 	}
 
-	IPSetTypeMap = map[string]xdpwall.FilterIpSetDirection{
+	xdpIpSetTypeMap = map[string]xdpwall.FilterIpSetDirection{
 		"SRC":  xdpwall.FilterIpSetDirectionSRC,
 		"DST":  xdpwall.FilterIpSetDirectionDST,
 		"BOTH": xdpwall.FilterIpSetDirectionBOTH,
 	}
 )
 
-type IPSetEntry struct {
+type IpSetEntry struct {
 	Name  string
 	Addrs []string
 }
 
-type IPSet map[string]*IPSetEntry
+type IpSet map[string]*IpSetEntry
 
 type SetExtension struct {
 	Enable    int    `json:"enable" yaml:"enable"`
@@ -83,7 +77,7 @@ type Rule struct {
 type RuleSet map[string][]*Rule
 
 type RuleFormat struct {
-	IPSets   []*IPSetEntry `json:"ipSets" yaml:"ipSets"`
+	IpSets   []*IpSetEntry `json:"ipSets" yaml:"ipSets"`
 	RuleSets []*struct {
 		Iface string  `json:"iface" yaml:"iface"`
 		Rules []*Rule `json:"rules" yaml:"rules"`
@@ -91,7 +85,7 @@ type RuleFormat struct {
 }
 
 type Wall struct {
-	ipSets   IPSet
+	ipSets   IpSet
 	ruleSets RuleSet
 
 	xdp *xdpwall.XdpWall
@@ -99,19 +93,13 @@ type Wall struct {
 
 func NewWall() *Wall {
 	w := &Wall{
-		ipSets:   make(IPSet),
-		ruleSets: make(RuleSet, MaxRules),
+		ipSets:   make(IpSet),
+		ruleSets: make(RuleSet),
 	}
 
 	w.xdp = xdpwall.NewXdpWall()
 
 	return w
-}
-
-func (w *Wall) str2hash(s string) uint32 {
-	hasher := fnv.New32()
-	hasher.Write([]byte(s))
-	return hasher.Sum32()
 }
 
 func (w *Wall) syncXdpIPSet(setName string) error {
@@ -153,11 +141,11 @@ func (w *Wall) syncXdpIPSet(setName string) error {
 	return nil
 }
 
-func (w *Wall) GetIPSet(setName string) *IPSetEntry {
+func (w *Wall) GetIPSet(setName string) *IpSetEntry {
 	return w.ipSets[setName]
 }
 
-func (w *Wall) SetIPSet(setName string, entry *IPSetEntry) {
+func (w *Wall) SetIPSet(setName string, entry *IpSetEntry) {
 	w.ipSets[setName] = entry
 	w.syncXdpIPSet(setName)
 }
@@ -166,7 +154,7 @@ func (w *Wall) SetIPSet(setName string, entry *IPSetEntry) {
 func (w *Wall) AppendIP(setName string, ips ...string) {
 	entry := w.GetIPSet(setName)
 	if entry == nil {
-		entry = &IPSetEntry{Name: setName}
+		entry = &IpSetEntry{Name: setName}
 	}
 	entry.Addrs = append(entry.Addrs, ips...)
 	w.syncXdpIPSet(setName)
@@ -261,7 +249,7 @@ func (w *Wall) LoadFromJSON(f string) error {
 	}
 
 	// fill ipset
-	for _, ipSet := range ruleFormat.IPSets {
+	for _, ipSet := range ruleFormat.IpSets {
 		if w.GetIPSet(ipSet.Name) != nil {
 			return fmt.Errorf("ipset %s already exists", ipSet.Name)
 		}

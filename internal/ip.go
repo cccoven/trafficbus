@@ -46,8 +46,14 @@ func ParseV4CIDRU32(addr string) (uip uint32, umask uint32, err error) {
 	return
 }
 
-func UintToIP(s uint32) net.IP {
+func IntToIP(s uint32) net.IP {
 	ip := make(net.IP, 4)
 	binary.BigEndian.PutUint32(ip, s)
 	return ip
+}
+
+func IPToInt(ip string) uint32 {
+	netIP := net.ParseIP(ip)
+	netIP = netIP.To4()
+	return binary.BigEndian.Uint32(netIP)
 }

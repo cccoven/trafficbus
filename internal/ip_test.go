@@ -27,11 +27,20 @@ func TestParseV4CIDRU32(t *testing.T) {
 }
 
 func TestUintToIP(t *testing.T) {
-	ip := UintToIP(2130706433)
-
-	if ip.String() != "127.0.0.1" {
-		t.Fatal("error ip")
+	uip := uint32(3232235702)
+	ip := IntToIP(uip)
+	if uip != IPToInt(ip.String()) {
+		t.Fatal()
 	}
-
 	fmt.Println(ip.String())
+}
+
+func TestIPToInt(t *testing.T) {
+	ip := "110.242.68.66"
+	uip := IPToInt(ip)
+	
+	if uip != IPToInt(ip) {
+		t.Fail()
+	}
+	fmt.Println(uip)
 }

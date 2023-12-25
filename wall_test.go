@@ -8,7 +8,7 @@ func TestIPSet(t *testing.T) {
 	store := NewWall()
 	setName := "myset"
 
-	store.SetIPSet(setName, &IPSetEntry{
+	store.SetIPSet(setName, &IpSetEntry{
 		Name: setName,
 	})
 

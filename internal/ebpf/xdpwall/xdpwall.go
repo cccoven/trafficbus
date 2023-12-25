@@ -213,32 +213,6 @@ func (x *XdpWall) CreateRuleSet(iface string) error {
 	return err
 }
 
-func (x *XdpWall) insertRule(iface int, pos int, rule FilterRuleItem) error {
-	rules, ok := x.ruleMap[iface]
-	if !ok {
-		rules = new(FilterRuleSet)
-		x.ruleMap[iface] = rules
-	}
-	if pos > int(rules.Count) {
-		return fmt.Errorf("position %d is out of range", pos)
-	}
-
-	if pos != int(rules.Count) {
-		// move elements behind `pos`
-		copy(rules.Items[pos+1:], rules.Items[pos:])
-	}
-	rules.Items[pos] = rule
-	rules.Count++
-
-	// update map
-	err := x.objs.RuleSetMap.Update(uint32(iface), rules, ebpf.UpdateAny)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 // InsertRule insert a rule into a specified position
 func (x *XdpWall) InsertRule(iface string, pos int, rule FilterRuleItem) error {
 	if pos < 0 {
@@ -297,7 +271,7 @@ func (x *XdpWall) AppendRule(iface string, rules ...FilterRuleItem) error {
 	return x.objs.RuleSetMap.Update(uint32(dev.Index), ruleSet, ebpf.UpdateAny)
 }
 
-func (x *XdpWall) DeleteRule(iface string, pos int) error {
+func (x *XdpWall) RemoveRule(iface string, pos int) error {
 	if pos < 0 {
 		return fmt.Errorf("invalid position %d", pos)
 	}
@@ -330,6 +304,14 @@ func (x *XdpWall) DeleteRule(iface string, pos int) error {
 	}
 
 	return nil
+}
+
+func (x *XdpWall) DelRuleSet(iface string) error {
+	dev, err := net.InterfaceByName(iface)
+	if err != nil {
+		return err
+	}
+	return x.objs.RuleSetMap.Delete(uint32(dev.Index))
 }
 
 func (x *XdpWall) Run() error {

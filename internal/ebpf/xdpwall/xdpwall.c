@@ -235,6 +235,10 @@ static __always_inline int traverse_rule(struct rule_set *rule_set, struct pktst
         if (!rule.enable) {
             continue;
         }
+
+        if (pkt->ip->protocol == IPPROTO_ICMP) {
+            __bpf_printk("ICMP src: %u, dst: %u", bpf_htonl(pkt->ip->saddr), bpf_htonl(pkt->ip->daddr));
+        }
         
         int hitprot = match_protocol(pkt->ip->protocol, rule.protocol);
         if (!hitprot) {
