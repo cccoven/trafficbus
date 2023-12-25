@@ -14,6 +14,28 @@ const (
 	MaxRules = 3
 )
 
+var (
+	TargetMap = map[string]xdpwall.FilterTarget{
+		"DROP":    xdpwall.FilterTargetDROP,
+		"ACCEPT":  xdpwall.FilterTargetACCEPT,
+		"TX":      xdpwall.FilterTargetTX,
+		"FORWARD": xdpwall.FilterTargetFORWARD,
+		"LOG":     xdpwall.FilterTargetLOG,
+	}
+
+	ProtocolMap = map[string]xdpwall.FilterProtocol{
+		"ICMP": xdpwall.FilterProtocolICMP,
+		"UDP":  xdpwall.FilterProtocolUDP,
+		"TCP":  xdpwall.FilterProtocolTCP,
+	}
+
+	IPSetTypeMap = map[string]xdpwall.FilterIpSetDirection{
+		"SRC":  xdpwall.FilterIpSetDirectionSRC,
+		"DST":  xdpwall.FilterIpSetDirectionDST,
+		"BOTH": xdpwall.FilterIpSetDirectionBOTH,
+	}
+)
+
 type IPSetEntry struct {
 	Name  string
 	Addrs []string

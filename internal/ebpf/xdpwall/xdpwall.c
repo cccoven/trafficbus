@@ -5,10 +5,10 @@
 
 char __license[] SEC("license") = "Dual MIT/GPL";
 
-#define MAX_IPSET_ENTRIES 1024
-#define MAX_IPSET 255
-#define MAX_RULES_ENTRIES 1024
-#define MAX_RULES 100
+#define MAX_IP_SET_ENTRIES 1024
+#define MAX_IP_SET 255
+#define MAX_RULE_SET_ENTRIES 1024
+#define MAX_RULE_SET 100
 
 enum target {
     ABORTED = XDP_ABORTED,
@@ -25,7 +25,7 @@ enum protocol {
     TCP = IPPROTO_TCP,
 };
 
-enum ipset_direction {
+enum ip_set_direction {
     SRC = 1,
     DST,
     BOTH,
@@ -34,7 +34,7 @@ enum ipset_direction {
 struct set_ext {
     int enable;
     u32 id;
-    enum ipset_direction direction;
+    enum ip_set_direction direction;
 };
 
 // example: -p udp --dport 8080
@@ -77,42 +77,48 @@ struct rule_item {
     struct target_ext target_ext;
 };
 
-struct ipset_item {
+struct ip_item {
     __u32 addr;
     __u32 mask;
 };
 
-struct ipsets {
-    struct ipset_item items[MAX_IPSET];
+struct ip_set {
+    struct ip_item items[MAX_IP_SET];
+    int count;
 };
 
 struct {
     __uint(type, BPF_MAP_TYPE_HASH);
-    __uint(max_entries, MAX_IPSET_ENTRIES);
+    __uint(max_entries, MAX_IP_SET_ENTRIES);
     __type(key, __u32);
-    __type(value, struct ipsets);
+    __type(value, struct ip_set);
     __uint(map_flags, BPF_F_NO_PREALLOC);
-} ipset_map SEC(".maps");
+} ip_set_map SEC(".maps");
 
-struct rules {
-    struct rule_item items[MAX_RULES];
+struct rule_set {
+    struct rule_item items[MAX_RULE_SET];
     int count;
 };
 
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
-	__uint(max_entries, MAX_RULES_ENTRIES);
+	__uint(max_entries, MAX_RULE_SET_ENTRIES);
     __type(key, __u32);
-    __type(value, struct rules);
+    __type(value, struct rule_set);
     __uint(map_flags, BPF_F_NO_PREALLOC);
-} rule_map SEC(".maps");
+} rule_set_map SEC(".maps");
 
 // Force emitting into the ELF.
 const enum target *action __attribute__((unused));
 const enum protocol *prot __attribute__((unused));
-const enum ipset_direction *ipsetdirectrion __attribute__((unused));
-const struct ipset_item *ipsetitem __attribute__((unused));
+const enum ip_set_direction *ipsetdirectrion __attribute__((unused));
+const struct ip_item *ipsetitem __attribute__((unused));
 const struct rule_item *ruleitem __attribute__((unused));
+const struct match_ext *matchext __attribute__((unused));
+const struct set_ext *setext __attribute__((unused));
+const struct udp_ext *udpext __attribute__((unused));
+const struct tcp_ext *tcpext __attribute__((unused));
+const struct target_ext *targetext __attribute__((unused));
 
 // tracking packet pointer
 struct cursor {
@@ -223,9 +229,9 @@ static int __always_inline match_tcp(struct tcphdr *tcp, struct rule_item *rule)
     return 1;
 }
 
-static __always_inline int traverse_rules(struct rules *rules, struct pktstack *pkt) {
-    for (int i = 0; i < MAX_RULES; i++) {
-        struct rule_item rule = rules->items[i];
+static __always_inline int traverse_rule(struct rule_set *rule_set, struct pktstack *pkt) {
+    for (int i = 0; i < MAX_RULE_SET; i++) {
+        struct rule_item rule = rule_set->items[i];
         if (!rule.enable) {
             continue;
         }
@@ -277,8 +283,8 @@ static __always_inline int traverse_rules(struct rules *rules, struct pktstack *
 SEC("xdp")
 int xdp_wall_func(struct xdp_md *ctx) {
     __u32 key = ctx->ingress_ifindex;
-    struct rules *rules = bpf_map_lookup_elem(&rule_map, &key);
-    if (!rules || !rules->count) {
+    struct rule_set *rule = bpf_map_lookup_elem(&rule_set_map, &key);
+    if (!rule || !rule->count) {
         return XDP_PASS;
     }
     
@@ -318,7 +324,7 @@ int xdp_wall_func(struct xdp_md *ctx) {
         }
     }
 
-    if (traverse_rules(rules, &pkt)) {
+    if (traverse_rule(rule, &pkt)) {
         return pkt.action;
     }
 

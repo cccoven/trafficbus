@@ -1,29 +1,6 @@
 package xdpwall
 
-type IPSet bpfIpsetItem
-type Rule bpfRuleItem
 
-var (
-	TargetMap = map[string]bpfTarget{
-		"DROP":    bpfTargetDROP,
-		"ACCEPT":  bpfTargetACCEPT,
-		"TX":      bpfTargetTX,
-		"FORWARD": bpfTargetFORWARD,
-		"LOG":     bpfTargetLOG,
-	}
-
-	ProtocolMap = map[string]bpfProtocol{
-		"ICMP": bpfProtocolICMP,
-		"UDP":  bpfProtocolUDP,
-		"TCP":  bpfProtocolTCP,
-	}
-
-	IPSetTypeMap = map[string]bpfIpsetDirection{
-		"SRC": bpfIpsetDirectionSRC,
-		"DST": bpfIpsetDirectionDST,
-		"BOTH": bpfIpsetDirectionBOTH,
-	}
-)
 
 // func ConvertToXdpRule(ori []trafficbus.Rule) ([]bpfXdpRule, error) {
 // 	var rules []bpfXdpRule

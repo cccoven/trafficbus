@@ -144,41 +144,52 @@ func runServers() {
 	}()
 }
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -type ipset_direction -type ipset_item -type rule_item -target amd64 bpf xdpwall.c -- -I../include
-func TestXdpWall(t *testing.T) {
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -type ip_set_direction -type ip_item -type rule_item -type match_ext -type set_ext -type udp_ext -type tcp_ext -type target_ext -target amd64 Filter xdpwall.c -- -I../include
+func TestXdpWallRuleSet(t *testing.T) {
 	runServers()
 	wall := NewXdpWall()
-
-	data := map[string][]Rule{
+	data := map[string][]FilterRuleItem{
 		"lo": {
 			{
 				Enable:   1,
-				Target:   bpfTargetDROP,
-				Protocol: bpfProtocolICMP,
+				Target:   FilterTargetDROP,
+				Protocol: FilterProtocolICMP,
 			},
 			{
 				Enable:   1,
-				Target:   bpfTargetACCEPT,
-				Protocol: bpfProtocolTCP,
+				Target:   FilterTargetACCEPT,
+				Protocol: FilterProtocolTCP,
+				MatchExt: FilterMatchExt{
+					Enable: 1,
+					Tcp: FilterTcpExt{
+						Enable: 1,
+						Dport:  8080,
+					},
+				},
 			},
 			{
 				Enable:   1,
-				Target:   bpfTargetDROP,
-				Protocol: bpfProtocolUDP,
+				Target:   FilterTargetDROP,
+				Protocol: FilterProtocolUDP,
+				MatchExt: FilterMatchExt{
+					Enable: 1,
+					Udp: FilterUdpExt{
+						Enable: 1,
+						Dport:  8080,
+					},
+				},
 			},
 		},
 		// "ens3": {},
 	}
-	data["lo"][1].MatchExt.Enable = 1
-	data["lo"][1].MatchExt.Tcp.Enable = 1
-	data["lo"][1].MatchExt.Tcp.Dport = 8080
-	data["lo"][2].MatchExt.Enable = 1
-	data["lo"][2].MatchExt.Udp.Enable = 1
-	data["lo"][2].MatchExt.Udp.Dport = 8081
 
 	for iface, rules := range data {
+		err := wall.CreateRuleSet(iface)
+		if err != nil {
+			t.Fatal(err)
+		}
 		for i, rule := range rules {
-			err := wall.InsertRule(iface, i, rule)
+			err = wall.InsertRule(iface, i, rule)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -190,4 +201,50 @@ func TestXdpWall(t *testing.T) {
 	wall.Attach("lo")
 
 	select {}
+}
+
+func TestXdpWallIpSet(t *testing.T) {
+	wall := NewXdpWall()
+
+	err := wall.CreateIpSet("myset")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = wall.AppendIp("myset", "127.0.0.1", "0.0.0.0", "192.168.0.0/16", "1.1.1.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ipsets, err := wall.LookupIpSet("myset")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if ipsets.Count != 4 {
+		t.Fatal("ipsets.Count should be 4")
+	}
+
+	for i := 0; i < int(ipsets.Count); i++ {
+		fmt.Printf("%+v\n", ipsets.Items[i])
+	}
+
+	err = wall.RemoveIp("myset", "0.0.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ipsets, err = wall.LookupIpSet("myset")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ipsets.Count != 3 {
+		t.Fatal("ipsets.Count should be 3")
+	}
+
+	fmt.Printf("\nremove...\n\n")
+
+	for i := 0; i < int(ipsets.Count); i++ {
+		fmt.Printf("%+v\n", ipsets.Items[i])
+	}
 }
