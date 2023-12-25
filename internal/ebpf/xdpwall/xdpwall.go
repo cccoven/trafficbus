@@ -253,24 +253,24 @@ func (x *XdpWall) InsertRule(iface string, pos int, rule FilterRuleItem) error {
 		return err
 	}
 
-	rules, err := x.LookupRuleSet(iface)
+	ruleSet, err := x.LookupRuleSet(iface)
 	if err != nil {
 		return err
 	}
 
-	if pos > int(rules.Count) {
+	if pos > int(ruleSet.Count) {
 		return fmt.Errorf("position %d is out of range", pos)
 	}
 
-	if pos != int(rules.Count) {
+	if pos != int(ruleSet.Count) {
 		// move elements behind `pos`
-		copy(rules.Items[pos+1:], rules.Items[pos:])
+		copy(ruleSet.Items[pos+1:], ruleSet.Items[pos:])
 	}
-	rules.Items[pos] = rule
-	rules.Count++
+	ruleSet.Items[pos] = rule
+	ruleSet.Count++
 
 	// update map
-	err = x.objs.RuleSetMap.Update(uint32(dev.Index), rules, ebpf.UpdateAny)
+	err = x.objs.RuleSetMap.Update(uint32(dev.Index), ruleSet, ebpf.UpdateAny)
 	if err != nil {
 		return err
 	}
@@ -310,21 +310,21 @@ func (x *XdpWall) DeleteRule(iface string, pos int) error {
 		return err
 	}
 
-	rules, ok := x.ruleMap[dev.Index]
-	if !ok {
-		return fmt.Errorf("rules for iface %s does not exist", iface)
+	ruleSet, err := x.LookupRuleSet(iface)
+	if err != nil {
+		return err
 	}
-	if pos > int(rules.Count) {
+	if pos > int(ruleSet.Count) {
 		return fmt.Errorf("position %d is out of range", pos)
 	}
 
-	rules.Items[pos] = FilterRuleItem{}
-	rules.Count--
-	if pos != int(rules.Count) {
-		copy(rules.Items[pos:], rules.Items[pos+1:])
+	ruleSet.Items[pos] = FilterRuleItem{}
+	ruleSet.Count--
+	if pos != int(ruleSet.Count) {
+		copy(ruleSet.Items[pos:], ruleSet.Items[pos+1:])
 	}
 
-	err = x.objs.RuleSetMap.Update(uint32(dev.Index), rules, ebpf.UpdateAny)
+	err = x.objs.RuleSetMap.Update(uint32(dev.Index), ruleSet, ebpf.UpdateAny)
 	if err != nil {
 		return err
 	}
