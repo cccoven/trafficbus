@@ -59,7 +59,6 @@ type MatchExtension struct {
 type TargetExtension struct{}
 
 type Rule struct {
-	Num             int            `json:"num" yaml:"num"`
 	Target          string         `json:"target" yaml:"target"`
 	Protocol        string         `json:"protocol" yaml:"protocol"`
 	Source          string         `json:"source" yaml:"source"`
@@ -74,8 +73,8 @@ type RuleSet struct {
 }
 
 type RuleFormat struct {
-	IpSets   []IpSet   `json:"ipSets" yaml:"ipSets"`
-	RuleSets []RuleSet `json:"ruleSets" yaml:"ruleSets"`
+	IpSets   []*IpSet   `json:"ipSets" yaml:"ipSets"`
+	RuleSets []*RuleSet `json:"ruleSets" yaml:"ruleSets"`
 }
 
 // Wall basically just a wrapper for xdpwall
@@ -264,7 +263,7 @@ func (w *Wall) DelRuleSet(iface string) error {
 	return nil
 }
 
-func (w *Wall) LoadFromJSON(f string) error {
+func (w *Wall) LoadFromJson(f string) error {
 	data, err := os.ReadFile(f)
 	if err != nil {
 		return err
@@ -276,6 +275,35 @@ func (w *Wall) LoadFromJSON(f string) error {
 		return err
 	}
 
+	for _, ipSet := range ruleFormat.IpSets {
+		w.ipSets[ipSet.Name] = ipSet
+		err = w.CreateIpSet(ipSet.Name)
+		if err != nil {
+			return err
+		}
+		err = w.AppendIp(ipSet.Name, ipSet.Addrs...)
+		if err != nil {
+			return err
+		}
+	}
+
+	for _, ruleSet := range ruleFormat.RuleSets {
+		w.ruleSets[ruleSet.Iface] = ruleSet.Rules
+		err = w.CreateRuleSet(ruleSet.Iface)
+		if err != nil {
+			return err
+		}
+		err = w.AppendRule(ruleSet.Iface, ruleSet.Rules...)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (w *Wall) LoadFromYaml(f string) error {
+	
 	return nil
 }
 

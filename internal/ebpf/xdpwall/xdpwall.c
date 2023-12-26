@@ -1,12 +1,12 @@
 //go:build ignore
 
-#include "bpf_helper.h"
 #include "bpf_endian.h"
+#include "common.h"
 
 char __license[] SEC("license") = "Dual MIT/GPL";
 
 #define MAX_IP_SET_ENTRIES 1024
-#define MAX_IP_SET 255
+#define MAX_IP_SET 100
 #define MAX_RULE_SET_ENTRIES 1024
 #define MAX_RULE_SET 100
 
@@ -32,27 +32,23 @@ enum ip_set_direction {
 };
 
 struct set_ext {
-    int enable;
     u32 id;
     enum ip_set_direction direction;
 };
 
 // example: -p udp --dport 8080
 struct udp_ext {
-    int enable;
     u16 sport;
     u16 dport;
 };
 
 struct tcp_ext {
-    int enable;
     u16 sport;
     u16 dport;
 };
 
 // example: -m comment --comment "foo"
 struct match_ext {
-    int enable;
     struct set_ext set;
     struct udp_ext udp;
     struct tcp_ext tcp;
@@ -63,7 +59,6 @@ struct target_ext {};
 
 // common rule
 struct rule_item {
-    int enable;
     u64 pkts;
     u64 bytes;
     enum target target;
@@ -120,11 +115,6 @@ const struct udp_ext *udpext __attribute__((unused));
 const struct tcp_ext *tcpext __attribute__((unused));
 const struct target_ext *targetext __attribute__((unused));
 
-// tracking packet pointer
-struct cursor {
-    void *pos;
-};
-
 struct pktstack {
     struct ethhdr *eth;
     struct iphdr *ip;
@@ -132,50 +122,6 @@ struct pktstack {
     struct tcphdr *tcp;
     enum target action;
 };
-
-static __always_inline int parse_ethhdr(struct cursor *cur, void *data_end, struct ethhdr **eth) {
-    struct ethhdr *__eth = cur->pos;
-    if ((void *)(__eth + 1) > data_end) {
-        return 0;
-    }
-    int ethhdr_size = sizeof(*__eth);
-    *eth = __eth;
-    cur->pos += ethhdr_size;
-    return 1;
-}
-
-static __always_inline int parse_iphdr(struct cursor *cur, void *data_end, struct iphdr **ip) {
-    struct iphdr *__ip = cur->pos;
-    if ((void *)(__ip + 1) > data_end) {
-        return 0;
-    }
-    int iphdr_size = __ip->ihl * 4;
-    *ip = __ip;
-    cur->pos += iphdr_size;
-    return 1;
-}
-
-static __always_inline int parse_udphdr(struct cursor *cur, void *data_end, struct udphdr **udp) {
-    struct udphdr *__udp = cur->pos;
-    if ((void *)(__udp + 1) > data_end) {
-        return 0;
-    }
-    int udphdr_size = __udp->len;
-    *udp = __udp;
-    cur->pos += udphdr_size;
-    return 1;
-}
-
-static __always_inline int parse_tcphdr(struct cursor *cur, void *data_end, struct tcphdr **tcp) {
-    struct tcphdr *__tcp = cur->pos;
-    if ((void *)(__tcp + 1) > data_end) {
-        return 0;
-    }
-    int tcphdr_size = __tcp->doff * 4;
-    *tcp = __tcp;
-    cur->pos += tcphdr_size;
-    return 1;
-}
 
 static int __always_inline match_protocol(__u32 pkt_prot, __u32 rule_prot) {
     // all protocol
@@ -199,11 +145,42 @@ static int __always_inline match_ip(__u32 pktip, __u32 ruleip, __u32 ruleip_mask
     return pktip == ruleip;
 }
 
+static int __always_inline match_set(struct iphdr *ip, struct set_ext set_ext) {
+    if (!set_ext.id) {
+        return 1;
+    }
+
+    struct ip_set *ip_set = bpf_map_lookup_elem(&ip_set_map, &set_ext.id);
+    if (!ip_set || !ip_set->count) {
+        return 1;
+    }
+
+    for (int i = 0; i < MAX_IP_SET; i++) {
+        if (i >= ip_set->count) {
+            break;
+        }
+        struct ip_item item = ip_set->items[i];
+        
+        // TODO match set
+        switch (set_ext.direction) {
+            case SRC:
+                match_ip(bpf_htonl(ip->saddr), item.addr, item.mask);
+                break;
+            case DST:
+                match_ip(bpf_htonl(ip->daddr), item.addr, item.mask);
+                break;
+            case BOTH:
+                break;
+            default:
+                break;
+        }
+    }
+    
+    return 1;
+}
+
 static int __always_inline match_udp(struct udphdr *udp, struct rule_item *rule) {
     struct udp_ext udpext = rule->match_ext.udp;
-    // if (!udpext.enable) {
-    //     return 1;
-    // }
     if (udpext.sport && bpf_htons(udp->source) != udpext.sport) {
         return 0;
     }
@@ -216,9 +193,6 @@ static int __always_inline match_udp(struct udphdr *udp, struct rule_item *rule)
 
 static int __always_inline match_tcp(struct tcphdr *tcp, struct rule_item *rule) {
     struct tcp_ext tcpext = rule->match_ext.tcp;
-    // if (!tcpext.enable) {
-    //     return 1;
-    // };
     if (tcpext.sport && bpf_htons(tcp->source) != tcpext.sport) {
         return 0;
     }
@@ -231,14 +205,11 @@ static int __always_inline match_tcp(struct tcphdr *tcp, struct rule_item *rule)
 
 static __always_inline int traverse_rule(struct rule_set *rule_set, struct pktstack *pkt) {
     for (int i = 0; i < MAX_RULE_SET; i++) {
-        struct rule_item rule = rule_set->items[i];
-        // if (!rule.enable) {
-        //     continue;
-        // }
         if (i >= rule_set->count) {
             break;
         }
-        
+        struct rule_item rule = rule_set->items[i];
+
         int hitprot = match_protocol(pkt->ip->protocol, rule.protocol);
         if (!hitprot) {
             continue;
@@ -247,6 +218,11 @@ static __always_inline int traverse_rule(struct rule_set *rule_set, struct pktst
         int hitsip = match_ip(bpf_htonl(pkt->ip->saddr), rule.source, rule.source_mask);
         int hitdip = match_ip(bpf_htonl(pkt->ip->daddr), rule.destination, rule.destination_mask);
         if (!hitsip || !hitdip) {
+            continue;
+        }
+
+        int hitset = match_set(pkt->ip, rule.match_ext.set);
+        if (!hitset) {
             continue;
         }
 

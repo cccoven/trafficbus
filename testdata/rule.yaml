@@ -1,0 +1,30 @@
+ipSets:
+  - name: myset
+    addrs:
+      - 39.156.66.10
+      - 110.242.68.66
+ruleSets:
+  - iface: lo
+    rules:
+      - target: DROP
+        protocol: ICMP
+        source: ""
+        destination: ""
+        matchExtension:
+          set:
+            name: myset
+            direction: SRC
+      - target: ACCEPT
+        protocol: TCP
+        source: 0.0.0.0/0
+        destination: 0.0.0.0
+        matchExtension:
+          tcp:
+            dstPort: 8080
+      - target: DROP
+        protocol: UDP
+        source: 0.0.0.0/0
+        destination: 0.0.0.0
+        matchExtension:
+          udp:
+            dstPort: 8081

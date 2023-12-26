@@ -162,31 +162,24 @@ func TestXdpWallRuleSet(t *testing.T) {
 	data := map[string][]FilterRuleItem{
 		"lo": {
 			{
-				Enable:   1,
 				Target:   FilterTargetDROP,
 				Protocol: FilterProtocolICMP,
 			},
 			{
-				Enable:   1,
 				Target:   FilterTargetACCEPT,
 				Protocol: FilterProtocolTCP,
 				MatchExt: FilterMatchExt{
-					Enable: 1,
 					Tcp: FilterTcpExt{
-						Enable: 1,
-						Dport:  8080,
+						Dport: 8080,
 					},
 				},
 			},
 			{
-				Enable:   1,
 				Target:   FilterTargetDROP,
 				Protocol: FilterProtocolUDP,
 				MatchExt: FilterMatchExt{
-					Enable: 1,
 					Udp: FilterUdpExt{
-						Enable: 1,
-						Dport:  8081,
+						Dport: 8081,
 					},
 				},
 			},
@@ -211,7 +204,6 @@ func TestXdpWallRuleSet(t *testing.T) {
 	fmt.Println("Insert...")
 
 	err := wall.InsertRule("lo", 1, FilterRuleItem{
-		Enable:   1,
 		Target:   FilterTargetACCEPT,
 		Protocol: FilterProtocolUDP,
 	})
@@ -220,7 +212,6 @@ func TestXdpWallRuleSet(t *testing.T) {
 	}
 
 	wall.AppendRule("lo", FilterRuleItem{
-		Enable: 1,
 		Target: FilterTargetACCEPT,
 	})
 
@@ -269,7 +260,6 @@ func TestXdpWallIpSet(t *testing.T) {
 	printIpSet(wall, "myset")
 }
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -type ip_set_direction -type ip_item -type rule_item -type match_ext -type set_ext -type udp_ext -type tcp_ext -type target_ext -target amd64 Filter xdpwall.c -- -I../include
 func TestXdpWall(t *testing.T) {
 	runServers()
 	wall := NewXdpWall()
@@ -278,14 +268,11 @@ func TestXdpWall(t *testing.T) {
 
 	wall.CreateRuleSet("lo")
 	wall.AppendRule("lo", FilterRuleItem{
-		Enable:   1,
 		Target:   FilterTargetDROP,
 		Protocol: FilterProtocolICMP,
 		Source:   internal.IPToInt("127.0.0.1"),
 		MatchExt: FilterMatchExt{
-			Enable: 1,
 			Set: FilterSetExt{
-				Enable:    1,
 				Id:        wall.GenIpSetID("myset"),
 				Direction: FilterIpSetDirectionSRC,
 			},

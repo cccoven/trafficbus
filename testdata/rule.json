@@ -3,48 +3,50 @@
         {
             "name": "myset",
             "addrs": [
-                "127.0.0.1/8",
-                "192.168.0.10"
+                "39.156.66.10",
+                "110.242.68.66"
             ]
         }
     ],
     "ruleSets": [
         {
-            "iface": "lo",
+            "iface": "enp0s3",
             "rules": [
                 {
-                    "num": 1,
+                    "target": "ACCEPT",
+                    "protocol": "ICMP",
+                    "source": "39.156.66.10",
+                    "destination": "",
+                    "matchExtension": {
+                        "set": {
+                            "name": "myset",
+                            "direction": "SRC"
+                        }
+                    }
+                },
+                {
                     "target": "DROP",
                     "protocol": "ICMP",
                     "source": "",
-                    "destination": "",
-                    "matchExtension": {}
+                    "destination": ""
                 },
                 {
-                    "num": 2,
-                    "target": "ACCEPT",
+                    "target": "DROP",
                     "protocol": "TCP",
                     "source": "0.0.0.0/0",
                     "destination": "0.0.0.0",
                     "matchExtension": {
-                        "enable": 1,
-                        "set": {
-                            "name": "myset",
-                            "direction": "DST"
-                        },
                         "tcp": {
                             "dstPort": 8080
                         }
                     }
                 },
                 {
-                    "num": 3,
-                    "target": "ACCEPT",
+                    "target": "DROP",
                     "protocol": "UDP",
                     "source": "0.0.0.0/0",
                     "destination": "0.0.0.0",
                     "matchExtension": {
-                        "enable": 1,
                         "udp": {
                             "dstPort": 8081
                         }
