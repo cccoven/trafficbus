@@ -286,7 +286,7 @@ func TestXdpWall(t *testing.T) {
 			Enable: 1,
 			Set: FilterSetExt{
 				Enable:    1,
-				Id:        wall.genSetID("myset"),
+				Id:        wall.GenIpSetID("myset"),
 				Direction: FilterIpSetDirectionSRC,
 			},
 		},

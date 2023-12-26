@@ -201,9 +201,9 @@ static int __always_inline match_ip(__u32 pktip, __u32 ruleip, __u32 ruleip_mask
 
 static int __always_inline match_udp(struct udphdr *udp, struct rule_item *rule) {
     struct udp_ext udpext = rule->match_ext.udp;
-    if (!udpext.enable) {
-        return 1;
-    }
+    // if (!udpext.enable) {
+    //     return 1;
+    // }
     if (udpext.sport && bpf_htons(udp->source) != udpext.sport) {
         return 0;
     }
@@ -216,9 +216,9 @@ static int __always_inline match_udp(struct udphdr *udp, struct rule_item *rule)
 
 static int __always_inline match_tcp(struct tcphdr *tcp, struct rule_item *rule) {
     struct tcp_ext tcpext = rule->match_ext.tcp;
-    if (!tcpext.enable) {
-        return 1;
-    };
+    // if (!tcpext.enable) {
+    //     return 1;
+    // };
     if (tcpext.sport && bpf_htons(tcp->source) != tcpext.sport) {
         return 0;
     }
@@ -232,12 +232,11 @@ static int __always_inline match_tcp(struct tcphdr *tcp, struct rule_item *rule)
 static __always_inline int traverse_rule(struct rule_set *rule_set, struct pktstack *pkt) {
     for (int i = 0; i < MAX_RULE_SET; i++) {
         struct rule_item rule = rule_set->items[i];
-        if (!rule.enable) {
-            continue;
-        }
-
-        if (pkt->ip->protocol == IPPROTO_ICMP) {
-            __bpf_printk("ICMP src: %u, dst: %u", bpf_htonl(pkt->ip->saddr), bpf_htonl(pkt->ip->daddr));
+        // if (!rule.enable) {
+        //     continue;
+        // }
+        if (i >= rule_set->count) {
+            break;
         }
         
         int hitprot = match_protocol(pkt->ip->protocol, rule.protocol);

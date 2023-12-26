@@ -18,8 +18,6 @@ import (
 const MaxRules = 100
 
 type XdpWall struct {
-	ruleMap map[int]*FilterRuleSet
-
 	objs  FilterObjects
 	links map[int]link.Link
 	sync.Mutex
@@ -27,8 +25,7 @@ type XdpWall struct {
 
 func NewXdpWall() *XdpWall {
 	x := &XdpWall{
-		ruleMap: make(map[int]*FilterRuleSet),
-		links:   make(map[int]link.Link),
+		links: make(map[int]link.Link),
 	}
 
 	x.loadObjects()
@@ -99,8 +96,8 @@ func (x *XdpWall) detach(iface int) error {
 	return nil
 }
 
-// genSetID use uint32 hash as ipset name
-func (w *XdpWall) genSetID(s string) uint32 {
+// GenIpSetID use uint32 hash as ipset name
+func (w *XdpWall) GenIpSetID(s string) uint32 {
 	hasher := fnv.New32()
 	hasher.Write([]byte(s))
 	return hasher.Sum32()
@@ -108,7 +105,7 @@ func (w *XdpWall) genSetID(s string) uint32 {
 
 func (x *XdpWall) LookupIpSet(setName string) (*FilterIpSet, error) {
 	ipSet := &FilterIpSet{}
-	err := x.objs.IpSetMap.Lookup(x.genSetID(setName), ipSet)
+	err := x.objs.IpSetMap.Lookup(x.GenIpSetID(setName), ipSet)
 	if err != nil {
 		if errors.Is(err, ebpf.ErrKeyNotExist) {
 			return nil, fmt.Errorf("ip set `%s` does not exist", setName)
@@ -119,7 +116,7 @@ func (x *XdpWall) LookupIpSet(setName string) (*FilterIpSet, error) {
 }
 
 func (x *XdpWall) CreateIpSet(setName string) error {
-	err := x.objs.IpSetMap.Update(x.genSetID(setName), &FilterIpSet{}, ebpf.UpdateNoExist)
+	err := x.objs.IpSetMap.Update(x.GenIpSetID(setName), &FilterIpSet{}, ebpf.UpdateNoExist)
 	if errors.Is(err, ebpf.ErrKeyExist) {
 		return fmt.Errorf("ip set `%s` already exists", setName)
 	}
@@ -144,11 +141,11 @@ func (x *XdpWall) AppendIp(setName string, ips ...string) error {
 		ipSet.Count++
 	}
 
-	return x.objs.IpSetMap.Update(x.genSetID(setName), ipSet, ebpf.UpdateAny)
+	return x.objs.IpSetMap.Update(x.GenIpSetID(setName), ipSet, ebpf.UpdateAny)
 }
 
 func (x *XdpWall) DelIpSet(setName string) error {
-	return x.objs.IpSetMap.Delete(x.genSetID(setName))
+	return x.objs.IpSetMap.Delete(x.GenIpSetID(setName))
 }
 
 func (x *XdpWall) RemoveIp(setName, ip string) error {
@@ -182,7 +179,7 @@ func (x *XdpWall) RemoveIp(setName, ip string) error {
 		copy(ipSet.Items[pos:], ipSet.Items[pos+1:])
 	}
 
-	return x.objs.IpSetMap.Update(x.genSetID(setName), ipSet, ebpf.UpdateAny)
+	return x.objs.IpSetMap.Update(x.GenIpSetID(setName), ipSet, ebpf.UpdateAny)
 }
 
 func (x *XdpWall) LookupRuleSet(iface string) (*FilterRuleSet, error) {
@@ -312,14 +309,4 @@ func (x *XdpWall) DelRuleSet(iface string) error {
 		return err
 	}
 	return x.objs.RuleSetMap.Delete(uint32(dev.Index))
-}
-
-func (x *XdpWall) Run() error {
-	for iface := range x.ruleMap {
-		err := x.attach(iface)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
