@@ -59,8 +59,6 @@ struct target_ext {};
 
 // common rule
 struct rule_item {
-    u64 pkts;
-    u64 bytes;
     enum target target;
     enum protocol protocol;
     u32 source;
@@ -269,7 +267,7 @@ static __always_inline int traverse_rule(struct rule_set *rule_set, struct pktst
 
 SEC("xdp")
 int xdp_wall_func(struct xdp_md *ctx) {
-    __bpf_printk("ipsetsize: %d, rulesetsize: %d, total: %d", (sizeof(struct ip_set) * MAX_IP_SET), (sizeof(struct rule_set) * MAX_RULE_SET), (sizeof(struct ip_set) * MAX_IP_SET) + (sizeof(struct rule_set) * MAX_RULE_SET));
+    __bpf_printk("ipsetsize: %d, rulesetsize: %d, total: %d", (sizeof(struct ip_set)), (sizeof(struct rule_set)), (sizeof(struct ip_set) * MAX_IP_SET) + (sizeof(struct rule_set) * MAX_RULE_SET));
 
     __u32 key = ctx->ingress_ifindex;
     struct rule_set *rule = bpf_map_lookup_elem(&rule_set_map, &key);

@@ -47,8 +47,6 @@ const (
 )
 
 type FilterRuleItem struct {
-	Pkts            uint64
-	Bytes           uint64
 	Target          FilterTarget
 	Protocol        FilterProtocol
 	Source          uint32
@@ -57,13 +55,11 @@ type FilterRuleItem struct {
 	DestinationMask uint32
 	MatchExt        FilterMatchExt
 	TargetExt       FilterTargetExt
-	_               [4]byte
 }
 
 type FilterRuleSet struct {
 	Items [30]FilterRuleItem
 	Count int32
-	_     [4]byte
 }
 
 type FilterSetExt struct {
