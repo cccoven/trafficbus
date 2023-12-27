@@ -289,3 +289,26 @@ func TestXdpWall(t *testing.T) {
 
 	select {}
 }
+
+func TestRuleMap(t *testing.T) {
+	wall := NewXdpWall()
+
+	for i := 0; i < 2000; i++ {
+		rule := FilterRuleItem{
+			Target:   FilterTargetDROP,
+			Protocol: FilterProtocolICMP,
+		}
+
+		err := wall.objs.RuleMap.Put(uint32(i), &rule)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	wall.Attach("lo")
+	wall.Attach("enp0s3")
+
+	for {
+		time.Sleep(5 * time.Second)
+	}
+}

@@ -9,6 +9,7 @@ char __license[] SEC("license") = "Dual MIT/GPL";
 #define MAX_IP_SET 10
 #define MAX_RULE_SET_ENTRIES 1024
 #define MAX_RULE_SET 30
+#define MAX_RULES 5000
 
 enum target {
     ABORTED = XDP_ABORTED,
@@ -100,6 +101,13 @@ struct {
     __type(value, struct rule_set);
     __uint(map_flags, BPF_F_NO_PREALLOC);
 } rule_set_map SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(max_entries, MAX_RULES);
+    __type(key, __u32);
+    __type(value, struct rule_item);
+} rule_map SEC(".maps");
 
 // Force emitting into the ELF.
 const enum target *action __attribute__((unused));
@@ -265,10 +273,24 @@ static __always_inline int traverse_rule(struct rule_set *rule_set, struct pktst
     return 0;
 }
 
+struct cbstack {
+    int index;
+};
+
+static __u64 traverse_rules(void *map, __u32 *key, struct rule_item *value, struct cbstack *ctx) {
+    // __bpf_printk("index: %u, protocol: %d", *key, value->protocol);
+    ctx->index++;
+    return 0;
+}
+
 SEC("xdp")
 int xdp_wall_func(struct xdp_md *ctx) {
-    __bpf_printk("ipsetsize: %d, rulesetsize: %d, total: %d", (sizeof(struct ip_set)), (sizeof(struct rule_set)), (sizeof(struct ip_set) * MAX_IP_SET) + (sizeof(struct rule_set) * MAX_RULE_SET));
+    struct cbstack stack = { .index = 0 };
+    bpf_for_each_map_elem(&rule_map, &traverse_rules, &stack, BPF_ANY);
+    __bpf_printk("index: %d", stack.index);
+    return XDP_PASS;
 
+    __bpf_printk("ipsetsize: %d, rulesetsize: %d, total: %d", (sizeof(struct ip_set)), (sizeof(struct rule_set)), (sizeof(struct ip_set) * MAX_IP_SET) + (sizeof(struct rule_set) * MAX_RULE_SET));
     __u32 key = ctx->ingress_ifindex;
     struct rule_set *rule = bpf_map_lookup_elem(&rule_set_map, &key);
     if (!rule || !rule->count) {

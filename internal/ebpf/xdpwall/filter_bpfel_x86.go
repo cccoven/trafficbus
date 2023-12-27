@@ -139,6 +139,7 @@ type FilterProgramSpecs struct {
 // It can be passed ebpf.CollectionSpec.Assign.
 type FilterMapSpecs struct {
 	IpSetMap   *ebpf.MapSpec `ebpf:"ip_set_map"`
+	RuleMap    *ebpf.MapSpec `ebpf:"rule_map"`
 	RuleSetMap *ebpf.MapSpec `ebpf:"rule_set_map"`
 }
 
@@ -162,12 +163,14 @@ func (o *FilterObjects) Close() error {
 // It can be passed to LoadFilterObjects or ebpf.CollectionSpec.LoadAndAssign.
 type FilterMaps struct {
 	IpSetMap   *ebpf.Map `ebpf:"ip_set_map"`
+	RuleMap    *ebpf.Map `ebpf:"rule_map"`
 	RuleSetMap *ebpf.Map `ebpf:"rule_set_map"`
 }
 
 func (m *FilterMaps) Close() error {
 	return _FilterClose(
 		m.IpSetMap,
+		m.RuleMap,
 		m.RuleSetMap,
 	)
 }
