@@ -163,7 +163,7 @@ func printIpSet(wall *Wall, setName string) {
 	}
 }
 
-func TestIPSet(t *testing.T) {
+func TestIpSet(t *testing.T) {
 	wall := NewWall()
 
 	err := wall.CreateIpSet("myset")

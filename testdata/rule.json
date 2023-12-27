@@ -10,12 +10,12 @@
     ],
     "ruleSets": [
         {
-            "iface": "enp0s3",
+            "iface": "ens3",
             "rules": [
                 {
-                    "target": "ACCEPT",
+                    "target": "DROP",
                     "protocol": "ICMP",
-                    "source": "39.156.66.10",
+                    "source": "",
                     "destination": "",
                     "matchExtension": {
                         "set": {
@@ -25,13 +25,7 @@
                     }
                 },
                 {
-                    "target": "DROP",
-                    "protocol": "ICMP",
-                    "source": "",
-                    "destination": ""
-                },
-                {
-                    "target": "DROP",
+                    "target": "ACCEPT",
                     "protocol": "TCP",
                     "source": "0.0.0.0/0",
                     "destination": "0.0.0.0",

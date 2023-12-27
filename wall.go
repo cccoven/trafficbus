@@ -121,8 +121,27 @@ func (w *Wall) CreateIpSet(setName string) error {
 	return nil
 }
 
+func (w *Wall) convertIpItem(ip string) (xdpwall.FilterIpItem, error) {
+	var ipItem xdpwall.FilterIpItem
+	var err error
+	ipItem.Addr, ipItem.Mask, err = internal.ParseV4CIDRU32(ip)
+	if err != nil {
+		return ipItem, err
+	}
+	return ipItem, nil
+}
+
 func (w *Wall) AppendIp(setName string, ips ...string) error {
-	err := w.xdp.AppendIp(setName, ips...)
+	var ipItems []xdpwall.FilterIpItem
+	for _, ip := range ips {
+		item, err := w.convertIpItem(ip)
+		if err != nil {
+			return err
+		}
+		ipItems = append(ipItems, item)
+	}
+
+	err := w.xdp.AppendIp(setName, ipItems...)
 	if err != nil {
 		return err
 	}
@@ -132,7 +151,12 @@ func (w *Wall) AppendIp(setName string, ips ...string) error {
 }
 
 func (w *Wall) RemoveIp(setName string, ip string) error {
-	err := w.xdp.RemoveIp(setName, ip)
+	ipItem, err := w.convertIpItem(ip)
+	if err != nil {
+		return err
+	}
+
+	err = w.xdp.RemoveIp(setName, ipItem)
 	if err != nil {
 		return err
 	}
@@ -303,7 +327,7 @@ func (w *Wall) LoadFromJson(f string) error {
 }
 
 func (w *Wall) LoadFromYaml(f string) error {
-	
+
 	return nil
 }
 

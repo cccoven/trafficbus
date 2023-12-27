@@ -243,14 +243,20 @@ func TestXdpWallIpSet(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = wall.AppendIp("myset", "127.0.0.1", "0.0.0.0", "192.168.0.0/16", "1.1.1.1")
+	err = wall.AppendIp(
+		"myset",
+		FilterIpItem{Addr: internal.IPToInt("127.0.0.1")},
+		FilterIpItem{Addr: internal.IPToInt("0.0.0.0")},
+		FilterIpItem{Addr: internal.IPToInt("1.1.1.1")},
+		FilterIpItem{Addr: internal.IPToInt("192.168.0.0")},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	printIpSet(wall, "myset")
 
-	err = wall.RemoveIp("myset", "0.0.0.0")
+	err = wall.RemoveIp("myset", FilterIpItem{Addr: internal.IPToInt("0.0.0.0")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +270,7 @@ func TestXdpWall(t *testing.T) {
 	runServers()
 	wall := NewXdpWall()
 	wall.CreateIpSet("myset")
-	wall.AppendIp("myset", "127.0.0.1/8")
+	wall.AppendIp("myset", FilterIpItem{Addr: internal.IPToInt("127.0.0.1")})
 
 	wall.CreateRuleSet("lo")
 	wall.AppendRule("lo", FilterRuleItem{

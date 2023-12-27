@@ -8,7 +8,6 @@ import (
 	"net"
 	"sync"
 
-	"github.com/cccoven/trafficbus/internal"
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 )
@@ -123,21 +122,14 @@ func (x *XdpWall) CreateIpSet(setName string) error {
 	return err
 }
 
-func (x *XdpWall) AppendIp(setName string, ips ...string) error {
+func (x *XdpWall) AppendIp(setName string, ips ...FilterIpItem) error {
 	ipSet, err := x.LookupIpSet(setName)
 	if err != nil {
 		return err
 	}
 
 	for _, ip := range ips {
-		uip, umask, err := internal.ParseV4CIDRU32(ip)
-		if err != nil {
-			return err
-		}
-		ipSet.Items[ipSet.Count] = FilterIpItem{
-			Addr: uip,
-			Mask: umask,
-		}
+		ipSet.Items[ipSet.Count] = ip
 		ipSet.Count++
 	}
 
@@ -148,13 +140,8 @@ func (x *XdpWall) DelIpSet(setName string) error {
 	return x.objs.IpSetMap.Delete(x.GenIpSetID(setName))
 }
 
-func (x *XdpWall) RemoveIp(setName, ip string) error {
+func (x *XdpWall) RemoveIp(setName string, ip FilterIpItem) error {
 	ipSet, err := x.LookupIpSet(setName)
-	if err != nil {
-		return err
-	}
-
-	uip, umask, err := internal.ParseV4CIDRU32(ip)
 	if err != nil {
 		return err
 	}
@@ -163,14 +150,14 @@ func (x *XdpWall) RemoveIp(setName, ip string) error {
 	pos := 0
 	for ; pos < int(ipSet.Count); pos++ {
 		item := ipSet.Items[pos]
-		if item.Addr == uip && item.Mask == umask {
+		if item.Addr == ip.Addr && item.Mask == ip.Mask {
 			found = true
 			break
 		}
 	}
 
 	if !found {
-		return fmt.Errorf("no such ip %s", ip)
+		return errors.New("ip not found")
 	}
 
 	ipSet.Items[pos] = FilterIpItem{}

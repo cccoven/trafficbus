@@ -160,23 +160,33 @@ static int __always_inline match_set(struct iphdr *ip, struct set_ext set_ext) {
             break;
         }
         struct ip_item item = ip_set->items[i];
-        
-        // TODO match set
+
+        int hit;        
+        // match set
         switch (set_ext.direction) {
             case SRC:
-                match_ip(bpf_htonl(ip->saddr), item.addr, item.mask);
+                hit = match_ip(bpf_htonl(ip->saddr), item.addr, item.mask);
                 break;
             case DST:
-                match_ip(bpf_htonl(ip->daddr), item.addr, item.mask);
+                hit = match_ip(bpf_htonl(ip->daddr), item.addr, item.mask);
                 break;
             case BOTH:
+                if (match_ip(bpf_htonl(ip->saddr), item.addr, item.mask) && match_ip(bpf_htonl(ip->daddr), item.addr, item.mask)) {
+                    hit = 1;
+                }
                 break;
             default:
+                hit = 0;
                 break;
         }
+        if (!hit) {
+            continue;
+        }
+
+        return 1;
     }
-    
-    return 1;
+
+    return 0;
 }
 
 static int __always_inline match_udp(struct udphdr *udp, struct rule_item *rule) {
@@ -221,39 +231,40 @@ static __always_inline int traverse_rule(struct rule_set *rule_set, struct pktst
             continue;
         }
 
-        int hitset = match_set(pkt->ip, rule.match_ext.set);
-        if (!hitset) {
-            continue;
-        }
-
-        int hit;
+        int hitbase;
         switch (rule.protocol) {
             case IPPROTO_ICMP:
                 // TODO
-                hit = 1;
+                hitbase = 1;
                 break;
             case IPPROTO_UDP:
                 if (pkt->udp) {
-                    hit = match_udp(pkt->udp, &rule);
+                    hitbase = match_udp(pkt->udp, &rule);
                 }
                 break;
             case IPPROTO_TCP:
                 if (pkt->tcp) {
-                    hit = match_tcp(pkt->tcp, &rule);
+                    hitbase = match_tcp(pkt->tcp, &rule);
                 }
                 break;
             default:
                 // support empty rule
-                hit = 1;
+                hitbase = 1;
                 break;
         }
-
-        if (!hit) {
+        if (!hitbase) {
             continue;
-        };
+        }
+
+        /* match extensions */
+        int hitset = match_set(pkt->ip, rule.match_ext.set);
+        __bpf_printk("hitset: %d", hitset);
+        if (hitset) {
+            continue;
+        }
 
         pkt->action = rule.target;
-        return hit;
+        return 1;
     }
 
     return 0;
