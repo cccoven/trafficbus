@@ -6,9 +6,9 @@
 char __license[] SEC("license") = "Dual MIT/GPL";
 
 #define MAX_IP_SET_ENTRIES 1024
-#define MAX_IP_SET 100
+#define MAX_IP_SET 10
 #define MAX_RULE_SET_ENTRIES 1024
-#define MAX_RULE_SET 100
+#define MAX_RULE_SET 30
 
 enum target {
     ABORTED = XDP_ABORTED,
@@ -146,11 +146,13 @@ static int __always_inline match_ip(__u32 pktip, __u32 ruleip, __u32 ruleip_mask
 }
 
 static int __always_inline match_set(struct iphdr *ip, struct set_ext set_ext) {
+    // not set
     if (!set_ext.id) {
         return 1;
     }
 
     struct ip_set *ip_set = bpf_map_lookup_elem(&ip_set_map, &set_ext.id);
+    // this set could not be found or was empty.
     if (!ip_set || !ip_set->count) {
         return 1;
     }
@@ -160,30 +162,26 @@ static int __always_inline match_set(struct iphdr *ip, struct set_ext set_ext) {
             break;
         }
         struct ip_item item = ip_set->items[i];
+        // have to access item first and don't know why yet.
+        __bpf_printk("addr: %u, mask: %u", item.addr, item.mask);
 
-        int hit;        
-        // match set
         switch (set_ext.direction) {
             case SRC:
-                hit = match_ip(bpf_htonl(ip->saddr), item.addr, item.mask);
+                if (match_ip(bpf_htonl(ip->saddr), item.addr, item.mask)) {
+                    return 1;
+                }
                 break;
             case DST:
-                hit = match_ip(bpf_htonl(ip->daddr), item.addr, item.mask);
+                if (match_ip(bpf_htonl(ip->daddr), item.addr, item.mask)) {
+                    return 1;
+                }
                 break;
             case BOTH:
                 if (match_ip(bpf_htonl(ip->saddr), item.addr, item.mask) && match_ip(bpf_htonl(ip->daddr), item.addr, item.mask)) {
-                    hit = 1;
+                    return 1;
                 }
                 break;
-            default:
-                hit = 0;
-                break;
         }
-        if (!hit) {
-            continue;
-        }
-
-        return 1;
     }
 
     return 0;
@@ -231,35 +229,34 @@ static __always_inline int traverse_rule(struct rule_set *rule_set, struct pktst
             continue;
         }
 
-        int hitbase;
+        /* match ip set */
+        int hitset = match_set(pkt->ip, rule.match_ext.set);
+        if (!hitset) {
+            continue;
+        }
+
+        int hittprot;
         switch (rule.protocol) {
             case IPPROTO_ICMP:
                 // TODO
-                hitbase = 1;
+                hittprot = 1;
                 break;
             case IPPROTO_UDP:
                 if (pkt->udp) {
-                    hitbase = match_udp(pkt->udp, &rule);
+                    hittprot = match_udp(pkt->udp, &rule);
                 }
                 break;
             case IPPROTO_TCP:
                 if (pkt->tcp) {
-                    hitbase = match_tcp(pkt->tcp, &rule);
+                    hittprot = match_tcp(pkt->tcp, &rule);
                 }
                 break;
             default:
                 // support empty rule
-                hitbase = 1;
+                hittprot = 1;
                 break;
         }
-        if (!hitbase) {
-            continue;
-        }
-
-        /* match extensions */
-        int hitset = match_set(pkt->ip, rule.match_ext.set);
-        __bpf_printk("hitset: %d", hitset);
-        if (hitset) {
+        if (!hittprot) {
             continue;
         }
 
@@ -272,6 +269,8 @@ static __always_inline int traverse_rule(struct rule_set *rule_set, struct pktst
 
 SEC("xdp")
 int xdp_wall_func(struct xdp_md *ctx) {
+    __bpf_printk("ipsetsize: %d, rulesetsize: %d, total: %d", (sizeof(struct ip_set) * MAX_IP_SET), (sizeof(struct rule_set) * MAX_RULE_SET), (sizeof(struct ip_set) * MAX_IP_SET) + (sizeof(struct rule_set) * MAX_RULE_SET));
+
     __u32 key = ctx->ingress_ifindex;
     struct rule_set *rule = bpf_map_lookup_elem(&rule_set_map, &key);
     if (!rule || !rule->count) {

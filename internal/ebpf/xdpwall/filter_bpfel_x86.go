@@ -18,7 +18,7 @@ type FilterIpItem struct {
 }
 
 type FilterIpSet struct {
-	Items [100]FilterIpItem
+	Items [10]FilterIpItem
 	Count int32
 }
 
@@ -61,7 +61,7 @@ type FilterRuleItem struct {
 }
 
 type FilterRuleSet struct {
-	Items [100]FilterRuleItem
+	Items [30]FilterRuleItem
 	Count int32
 	_     [4]byte
 }

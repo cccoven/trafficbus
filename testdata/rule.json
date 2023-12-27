@@ -4,13 +4,13 @@
             "name": "myset",
             "addrs": [
                 "39.156.66.10",
-                "110.242.68.66"
+                "110.242.68.0/24"
             ]
         }
     ],
     "ruleSets": [
         {
-            "iface": "ens3",
+            "iface": "enp0s3",
             "rules": [
                 {
                     "target": "DROP",
