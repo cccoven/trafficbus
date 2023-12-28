@@ -1,52 +1,57 @@
 {
-    "ipSets": [
+    "ipsets": [
         {
             "name": "myset",
             "addrs": [
                 "39.156.66.10",
                 "110.242.68.0/24"
             ]
+        },
+        {
+            "name": "myset2",
+            "addrs": [
+                "39.156.66.10",
+                "127.0.0.1"
+            ]
         }
     ],
-    "ruleSets": [
+    "rules": [
         {
-            "iface": "enp0s3",
-            "rules": [
-                {
-                    "target": "DROP",
-                    "protocol": "ICMP",
-                    "source": "",
-                    "destination": "",
-                    "matchExtension": {
-                        "set": {
-                            "name": "myset",
-                            "direction": "SRC"
-                        }
-                    }
-                },
-                {
-                    "target": "ACCEPT",
-                    "protocol": "TCP",
-                    "source": "0.0.0.0/0",
-                    "destination": "0.0.0.0",
-                    "matchExtension": {
-                        "tcp": {
-                            "dstPort": 8080
-                        }
-                    }
-                },
-                {
-                    "target": "DROP",
-                    "protocol": "UDP",
-                    "source": "0.0.0.0/0",
-                    "destination": "0.0.0.0",
-                    "matchExtension": {
-                        "udp": {
-                            "dstPort": 8081
-                        }
-                    }
+            "interface": "ens3",
+            "target": "DROP",
+            "protocol": "ICMP",
+            "source": "",
+            "destination": "",
+            "matchExtension": {
+                "set": {
+                    "name": "myset",
+                    "direction": "SRC"
                 }
-            ]
+            }
+        },
+        {
+            "interface": "ens3",
+            "target": "ACCEPT",
+            "protocol": "TCP",
+            "source": "0.0.0.0/0",
+            "destination": "0.0.0.0",
+            "matchExtension": {
+                "tcp": {
+                    "dstPort": 8080
+                }
+            }
+        },
+        {
+            "interface": "ens3",
+            "target": "DROP",
+            "protocol": "UDP",
+            "source": "0.0.0.0/0",
+            "destination": "0.0.0.0",
+            "matchExtension": {
+                "udp": {
+                    "dstPort": 8081
+                }
+            }
         }
     ]
 }

@@ -12,16 +12,6 @@ import (
 	"github.com/cilium/ebpf"
 )
 
-type FilterIpItem struct {
-	Addr uint32
-	Mask uint32
-}
-
-type FilterIpSet struct {
-	Items [10]FilterIpItem
-	Count int32
-}
-
 type FilterIpSetDirection uint32
 
 const (
@@ -30,12 +20,15 @@ const (
 	FilterIpSetDirectionBOTH FilterIpSetDirection = 3
 )
 
-type FilterMatchExt struct {
-	Set       FilterSetExt
-	Udp       FilterUdpExt
-	Tcp       FilterTcpExt
-	Multiport uint16
-	_         [2]byte
+type FilterIpsetItem struct {
+	Id   uint32
+	Ip   uint32
+	Mask uint32
+}
+
+type FilterIpv4LpmKey struct {
+	Prefixlen uint32
+	Data      uint32
 }
 
 type FilterProtocol uint32
@@ -46,25 +39,31 @@ const (
 	FilterProtocolTCP  FilterProtocol = 6
 )
 
-type FilterRuleItem struct {
+type FilterRule struct {
+	Interface       int32
 	Target          FilterTarget
 	Protocol        FilterProtocol
 	Source          uint32
 	SourceMask      uint32
 	Destination     uint32
 	DestinationMask uint32
-	MatchExt        FilterMatchExt
-	TargetExt       FilterTargetExt
-}
-
-type FilterRuleSet struct {
-	Items [30]FilterRuleItem
-	Count int32
-}
-
-type FilterSetExt struct {
-	Id        uint32
-	Direction FilterIpSetDirection
+	MatchExt        struct {
+		Set struct {
+			Id        uint32
+			Direction FilterIpSetDirection
+		}
+		Udp struct {
+			Sport uint16
+			Dport uint16
+		}
+		Tcp struct {
+			Sport uint16
+			Dport uint16
+		}
+		Multiport uint16
+		_         [2]byte
+	}
+	TargetExt struct{}
 }
 
 type FilterTarget uint32
@@ -77,18 +76,6 @@ const (
 	FilterTargetFORWARD FilterTarget = 4
 	FilterTargetLOG     FilterTarget = 5
 )
-
-type FilterTargetExt struct{}
-
-type FilterTcpExt struct {
-	Sport uint16
-	Dport uint16
-}
-
-type FilterUdpExt struct {
-	Sport uint16
-	Dport uint16
-}
 
 // LoadFilter returns the embedded CollectionSpec for Filter.
 func LoadFilter() (*ebpf.CollectionSpec, error) {
@@ -138,9 +125,9 @@ type FilterProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type FilterMapSpecs struct {
-	IpSetMap   *ebpf.MapSpec `ebpf:"ip_set_map"`
-	RuleMap    *ebpf.MapSpec `ebpf:"rule_map"`
-	RuleSetMap *ebpf.MapSpec `ebpf:"rule_set_map"`
+	IpsetMap  *ebpf.MapSpec `ebpf:"ipset_map"`
+	IpsetMap2 *ebpf.MapSpec `ebpf:"ipset_map2"`
+	RuleMap   *ebpf.MapSpec `ebpf:"rule_map"`
 }
 
 // FilterObjects contains all objects after they have been loaded into the kernel.
@@ -162,16 +149,16 @@ func (o *FilterObjects) Close() error {
 //
 // It can be passed to LoadFilterObjects or ebpf.CollectionSpec.LoadAndAssign.
 type FilterMaps struct {
-	IpSetMap   *ebpf.Map `ebpf:"ip_set_map"`
-	RuleMap    *ebpf.Map `ebpf:"rule_map"`
-	RuleSetMap *ebpf.Map `ebpf:"rule_set_map"`
+	IpsetMap  *ebpf.Map `ebpf:"ipset_map"`
+	IpsetMap2 *ebpf.Map `ebpf:"ipset_map2"`
+	RuleMap   *ebpf.Map `ebpf:"rule_map"`
 }
 
 func (m *FilterMaps) Close() error {
 	return _FilterClose(
-		m.IpSetMap,
+		m.IpsetMap,
+		m.IpsetMap2,
 		m.RuleMap,
-		m.RuleSetMap,
 	)
 }
 

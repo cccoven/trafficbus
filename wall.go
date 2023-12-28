@@ -2,6 +2,10 @@ package trafficbus
 
 import (
 	"encoding/json"
+	"errors"
+	"hash/fnv"
+	"log"
+	"net"
 	"os"
 
 	"github.com/cccoven/trafficbus/internal"
@@ -30,7 +34,7 @@ var (
 	}
 )
 
-type IpSet struct {
+type IPSet struct {
 	Name  string
 	Addrs []string
 }
@@ -59,6 +63,7 @@ type MatchExtension struct {
 type TargetExtension struct{}
 
 type Rule struct {
+	Interface       string         `json:"interface"`
 	Target          string         `json:"target" yaml:"target"`
 	Protocol        string         `json:"protocol" yaml:"protocol"`
 	Source          string         `json:"source" yaml:"source"`
@@ -73,135 +78,123 @@ type RuleSet struct {
 }
 
 type RuleFormat struct {
-	IpSets   []*IpSet   `json:"ipSets" yaml:"ipSets"`
-	RuleSets []*RuleSet `json:"ruleSets" yaml:"ruleSets"`
+	IPSets []*IPSet `json:"ipsets" yaml:"ipsets"`
+	Rules  []*Rule  `json:"rules"`
 }
 
 // Wall basically just a wrapper for xdpwall
 type Wall struct {
-	ipSets   map[string]*IpSet
-	ruleSets map[string][]*Rule
+	ipsets map[string]*IPSet
+	rules  []*Rule
 
 	xdp *xdpwall.XdpWall
 }
 
 func NewWall() *Wall {
-	w := &Wall{
-		ipSets:   make(map[string]*IpSet),
-		ruleSets: make(map[string][]*Rule),
-	}
+	w := new(Wall)
+	w.ipsets = make(map[string]*IPSet)
 
-	w.xdp = xdpwall.NewXdpWall()
+	xdpWall, err := xdpwall.NewXdpWall()
+	if err != nil {
+		log.Fatal(err)
+	}
+	w.xdp = xdpWall
 
 	return w
 }
 
-func (w *Wall) ListIpSet() []*IpSet {
-	var entries []*IpSet
-	for _, ipSet := range w.ipSets {
-		entries = append(entries, ipSet)
+func (w *Wall) ListIPSet() ([]*IPSet, error) {
+	var entries []*IPSet
+	for _, ipset := range w.ipsets {
+		entries = append(entries, ipset)
 	}
-	return entries
+	return entries, nil
 }
 
-func (w *Wall) LookupIpSet(setName string) (*IpSet, error) {
-	_, err := w.xdp.LookupIpSet(setName)
-	if err != nil {
-		return nil, err
-	}
-	return w.ipSets[setName], nil
+func (w *Wall) LookupIPSet(setName string) (*IPSet, error) {
+	return w.ipsets[setName], nil
 }
 
-func (w *Wall) CreateIpSet(setName string) error {
-	err := w.xdp.CreateIpSet(setName)
-	if err != nil {
-		return err
-	}
-	w.ipSets[setName] = &IpSet{Name: setName}
+func (w *Wall) CreateIPSet(setName string) error {
+	w.ipsets[setName] = &IPSet{Name: setName}
 	return nil
 }
 
-func (w *Wall) convertIpItem(ip string) (xdpwall.FilterIpItem, error) {
-	var ipItem xdpwall.FilterIpItem
-	var err error
-	ipItem.Addr, ipItem.Mask, err = internal.ParseV4CIDRU32(ip)
-	if err != nil {
-		return ipItem, err
+func (w *Wall) AppendIP(setName string, ips ...string) error {
+	_, ok := w.ipsets[setName]
+	if !ok {
+		return errors.New("set does not exist")
 	}
-	return ipItem, nil
-}
 
-func (w *Wall) AppendIp(setName string, ips ...string) error {
-	var ipItems []xdpwall.FilterIpItem
+	var keys []xdpwall.FilterIpv4LpmKey
+	var values []uint32
+
 	for _, ip := range ips {
-		item, err := w.convertIpItem(ip)
+		uip, _, err := internal.ParseV4CIDRU32(ip)
 		if err != nil {
 			return err
 		}
-		ipItems = append(ipItems, item)
+		keys = append(keys, xdpwall.FilterIpv4LpmKey{
+			Prefixlen: 32,
+			Data:      uip,
+		})
+		values = append(values, uip)
 	}
 
-	err := w.xdp.AppendIp(setName, ipItems...)
+	_, err := w.xdp.UpdateIPs(keys, values)
 	if err != nil {
 		return err
 	}
-	entry := w.ipSets[setName]
-	entry.Addrs = append(entry.Addrs, ips...)
+
+	w.ipsets[setName].Addrs = append(w.ipsets[setName].Addrs, ips...)
 	return nil
 }
 
-func (w *Wall) RemoveIp(setName string, ip string) error {
-	ipItem, err := w.convertIpItem(ip)
+func (w *Wall) RemoveIP(setName string, ip string) error {
+	_, ok := w.ipsets[setName]
+	if !ok {
+		return errors.New("set does not exist")
+	}
+
+	uip, _, err := internal.ParseV4CIDRU32(ip)
 	if err != nil {
 		return err
 	}
 
-	err = w.xdp.RemoveIp(setName, ipItem)
+	err = w.xdp.RemoveIP(xdpwall.FilterIpv4LpmKey{Prefixlen: 32, Data: uip})
 	if err != nil {
 		return err
 	}
-	entry := w.ipSets[setName]
-	for i, addr := range entry.Addrs {
+
+	for i, addr := range w.ipsets[setName].Addrs {
 		if addr == ip {
-			entry.Addrs = append(entry.Addrs[:i], entry.Addrs[i+1:]...)
+			w.ipsets[setName].Addrs = append(w.ipsets[setName].Addrs[:i], w.ipsets[setName].Addrs[i+1:]...)
 			break
 		}
 	}
+
 	return nil
 }
 
-func (w *Wall) DelIpSet(setName string) error {
-	err := w.xdp.DelIpSet(setName)
-	if err != nil {
-		return err
-	}
-	delete(w.ipSets, setName)
-	return nil
+// str2hash use uint32 hash as ipset name
+func (w *Wall) str2hash(s string) uint32 {
+	hasher := fnv.New32()
+	hasher.Write([]byte(s))
+	return hasher.Sum32()
 }
 
-func (w *Wall) LookupRuleSet(iface string) ([]*Rule, error) {
-	_, err := w.xdp.LookupRuleSet(iface)
-	if err != nil {
-		return nil, err
-	}
-	return w.ruleSets[iface], nil
-}
-
-func (w *Wall) CreateRuleSet(iface string) error {
-	err := w.xdp.CreateRuleSet(iface)
-	if err != nil {
-		return err
-	}
-	w.ruleSets[iface] = make([]*Rule, 0)
-	return nil
-}
-
-func (w *Wall) convertRule(rule *Rule) (xdpwall.FilterRuleItem, error) {
+func (w *Wall) convertRule(rule *Rule) (xdpwall.FilterRule, error) {
+	var ret xdpwall.FilterRule
 	var err error
-	ret := xdpwall.FilterRuleItem{
-		Target:   xdpTargetMap[rule.Target],
-		Protocol: xdpProtocolMap[rule.Protocol],
+
+	iface, err := net.InterfaceByName(rule.Interface)
+	if err != nil {
+		return ret, err
 	}
+
+	ret.Interface = int32(iface.Index)
+	ret.Target = xdpTargetMap[rule.Target]
+	ret.Protocol = xdpProtocolMap[rule.Protocol]
 
 	ret.Source, ret.SourceMask, err = internal.ParseV4CIDRU32(rule.Source)
 	if err != nil {
@@ -214,7 +207,7 @@ func (w *Wall) convertRule(rule *Rule) (xdpwall.FilterRuleItem, error) {
 	}
 
 	// ip set
-	ret.MatchExt.Set.Id = w.xdp.GenIpSetID(rule.MatchExtension.Set.Name)
+	ret.MatchExt.Set.Id = w.str2hash(rule.MatchExtension.Set.Name)
 	ret.MatchExt.Set.Direction = xdpIpSetTypeMap[rule.MatchExtension.Set.Direction]
 
 	// udp
@@ -228,62 +221,60 @@ func (w *Wall) convertRule(rule *Rule) (xdpwall.FilterRuleItem, error) {
 	return ret, nil
 }
 
-func (w *Wall) InsertRule(iface string, pos int, rule *Rule) error {
+func (w *Wall) ListRule() ([]*Rule, error) {
+	return w.rules, nil
+}
+
+func (w *Wall) InsertRule(pos int, rule *Rule) error {
 	xdpRule, err := w.convertRule(rule)
 	if err != nil {
 		return err
 	}
-	err = w.xdp.InsertRule(iface, pos, xdpRule)
+	err = w.xdp.UpdateRule(uint32(pos), xdpRule)
 	if err != nil {
 		return err
 	}
 
-	rules := w.ruleSets[iface]
-	if pos == len(rules) {
-		w.ruleSets[iface] = append(rules, rule)
+	if pos == len(w.rules) {
+		w.rules = append(w.rules, rule)
 		return nil
 	}
 
-	w.ruleSets[iface] = append(w.ruleSets[iface], nil)
-	copy(w.ruleSets[iface][pos+1:], w.ruleSets[iface][pos:])
-	w.ruleSets[iface][pos] = rule
+	w.rules = append(w.rules, nil)
+	copy(w.rules[pos+1:], w.rules[pos:])
+	w.rules[pos] = rule
 	return nil
 }
 
-func (w *Wall) AppendRule(iface string, rules ...*Rule) error {
-	var xdpRules []xdpwall.FilterRuleItem
-	for _, r := range rules {
+func (w *Wall) AppendRule(rules ...*Rule) error {
+	var keys []uint32
+	var values []xdpwall.FilterRule
+	l := len(w.rules)
+
+	for i, r := range rules {
 		xdpRule, err := w.convertRule(r)
 		if err != nil {
 			return err
 		}
-		xdpRules = append(xdpRules, xdpRule)
+		keys = append(keys, uint32(i+l))
+		values = append(values, xdpRule)
 	}
 
-	err := w.xdp.AppendRule(iface, xdpRules...)
+	_, err := w.xdp.UpdateRules(keys, values)
 	if err != nil {
 		return err
 	}
 
-	w.ruleSets[iface] = append(w.ruleSets[iface], rules...)
+	w.rules = append(w.rules, rules...)
 	return nil
 }
 
-func (w *Wall) RemoveRule(iface string, pos int) error {
-	err := w.xdp.RemoveRule(iface, pos)
+func (w *Wall) RemoveRule(pos int) error {
+	err := w.xdp.UpdateRule(uint32(pos), xdpwall.FilterRule{})
 	if err != nil {
 		return err
 	}
-	w.ruleSets[iface] = append(w.ruleSets[iface][:pos], w.ruleSets[iface][pos+1:]...)
-	return nil
-}
-
-func (w *Wall) DelRuleSet(iface string) error {
-	err := w.xdp.DelRuleSet(iface)
-	if err != nil {
-		return err
-	}
-	delete(w.ruleSets, iface)
+	w.rules = append(w.rules[:pos], w.rules[pos+1:]...)
 	return nil
 }
 
@@ -299,28 +290,20 @@ func (w *Wall) LoadFromJson(f string) error {
 		return err
 	}
 
-	for _, ipSet := range ruleFormat.IpSets {
-		w.ipSets[ipSet.Name] = ipSet
-		err = w.CreateIpSet(ipSet.Name)
+	for _, ipset := range ruleFormat.IPSets {
+		err = w.CreateIPSet(ipset.Name)
 		if err != nil {
 			return err
 		}
-		err = w.AppendIp(ipSet.Name, ipSet.Addrs...)
+		err = w.AppendIP(ipset.Name, ipset.Addrs...)
 		if err != nil {
 			return err
 		}
 	}
 
-	for _, ruleSet := range ruleFormat.RuleSets {
-		w.ruleSets[ruleSet.Iface] = ruleSet.Rules
-		err = w.CreateRuleSet(ruleSet.Iface)
-		if err != nil {
-			return err
-		}
-		err = w.AppendRule(ruleSet.Iface, ruleSet.Rules...)
-		if err != nil {
-			return err
-		}
+	err = w.AppendRule(ruleFormat.Rules...)
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -332,11 +315,13 @@ func (w *Wall) LoadFromYaml(f string) error {
 }
 
 func (w *Wall) Run() error {
-	for iface := range w.ruleSets {
-		err := w.xdp.Attach(iface)
-		if err != nil {
-			return err
-		}
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return err
+	}
+
+	for _, iface := range ifaces {
+		w.xdp.Attach(iface.Index)
 	}
 	return nil
 }

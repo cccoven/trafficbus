@@ -144,21 +144,21 @@ func runServers() {
 	}()
 }
 
-func handleError(err error) {
+func fatal(err error) {
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
 func printIpSet(wall *Wall, setName string) {
-	ipSet, err := wall.LookupIpSet(setName)
+	ipset, err := wall.LookupIPSet(setName)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("Name:\t%s\n", ipSet.Name)
+	fmt.Printf("Name:\t%s\n", ipset.Name)
 	fmt.Println("Addresses: ")
-	for _, addr := range ipSet.Addrs {
+	for _, addr := range ipset.Addrs {
 		fmt.Printf("\t%s\n", addr)
 	}
 }
@@ -166,109 +166,79 @@ func printIpSet(wall *Wall, setName string) {
 func TestIpSet(t *testing.T) {
 	wall := NewWall()
 
-	err := wall.CreateIpSet("myset")
-	handleError(err)
+	err := wall.CreateIPSet("myset")
+	fatal(err)
 
-	err = wall.AppendIp("myset", "127.0.0.1", "0.0.0.0", "192.168.0.0/16", "1.1.1.1")
-	handleError(err)
+	err = wall.AppendIP("myset", "127.0.0.1", "0.0.0.0", "192.168.0.0/16", "1.1.1.1")
+	fatal(err)
 
 	printIpSet(wall, "myset")
 
 	fmt.Printf("\nRemove...\n\n")
 
-	err = wall.RemoveIp("myset", "0.0.0.0")
-	handleError(err)
-	err = wall.RemoveIp("myset", "1.1.1.1")
-	handleError(err)
+	err = wall.RemoveIP("myset", "0.0.0.0")
+	fatal(err)
+	err = wall.RemoveIP("myset", "1.1.1.1")
+	fatal(err)
 
 	printIpSet(wall, "myset")
 }
 
-func printRuleSet(wall *Wall, iface string) {
-	rules, err := wall.LookupRuleSet(iface)
+func printRules(wall *Wall) {
+	rules, err := wall.ListRule()
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	for i, rule := range rules {
-		fmt.Printf("index: %d, target: %s, protocol: %s, source: %s, destination: %s\n", i, rule.Target, rule.Protocol, rule.Source, rule.Destination)
+		fmt.Printf("index: %d, interface: %s, target: %s, protocol: %s, source: %s, destination: %s\n", i, rule.Interface, rule.Target, rule.Protocol, rule.Source, rule.Destination)
 	}
 }
 
-func TestRuleSet(t *testing.T) {
-	runServers()
+func TestRules(t *testing.T) {
 	wall := NewWall()
-	data := map[string][]*Rule{
-		"lo": {
-			{
-				Target:   "DROP",
-				Protocol: "ICMP",
-			},
-			{
-				Target:   "ACCEPT",
-				Protocol: "TCP",
-				MatchExtension: MatchExtension{
-					TCP: TCPExtension{
-						DstPort: 8080,
-					},
-				},
-			},
-			{
-				Target:   "DROP",
-				Protocol: "UDP",
-				MatchExtension: MatchExtension{
-					UDP: UDPExtension{
-						DstPort: 8081,
-					},
-				},
-			},
-		},
+	iface := "lo"
+	data := []*Rule{
+		{Interface: iface, Protocol: "ICMP"},
+		{Interface: iface, Protocol: "TCP"},
+		{Interface: iface, Protocol: "UDP"},
 	}
 
-	for iface, rules := range data {
-		err := wall.CreateRuleSet(iface)
-		handleError(err)
-		for i, rule := range rules {
-			err = wall.InsertRule(iface, i, rule)
-			handleError(err)
-		}
-	}
+	err := wall.AppendRule(data...)
+	fatal(err)
 
-	printRuleSet(wall, "lo")
+	printRules(wall)
 
 	fmt.Println("Insert...")
 
-	err := wall.InsertRule("lo", 1, &Rule{
-		Target:   "ACCEPT",
-		Protocol: "UDP",
-		Source:   "127.0.0.0/8",
-	})
-	handleError(err)
+	err = wall.InsertRule(1, &Rule{Interface: iface, Protocol: "UDP"})
+	fatal(err)
 
-	err = wall.AppendRule("lo", &Rule{Target: "ACCEPT"})
-	handleError(err)
+	err = wall.AppendRule(&Rule{Interface: iface, Protocol: "TCP"})
+	fatal(err)
 
-	printRuleSet(wall, "lo")
+	printRules(wall)
 
 	fmt.Println("Remove...")
 
-	wall.RemoveRule("lo", 1)
+	err = wall.RemoveRule(1)
+	fatal(err)
 
-	printRuleSet(wall, "lo")
+	printRules(wall)
 }
 
-func TestLoadFromJSON(t *testing.T) {
+func TestLoadFromJson(t *testing.T) {
 	wall := NewWall()
 	err := wall.LoadFromJson("./testdata/rule.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	fmt.Println("ipSet:")
+	fmt.Println("ipset:")
 	printIpSet(wall, "myset")
 
-	fmt.Println("ruleSet:")
-	printRuleSet(wall, "lo")
+	fmt.Println("rules:")
+	printRules(wall)
 }
 
 func TestLoadFromYaml(t *testing.T) {}
@@ -277,14 +247,15 @@ func TestWall(t *testing.T) {
 	runServers()
 	wall := NewWall()
 	err := wall.LoadFromJson("./testdata/rule.json")
-	if err != nil {
-		t.Fatal(err)
-	}
+	fatal(err)
 
 	err = wall.Run()
-	if err != nil {
-		t.Fatal(err)
-	}
+	fatal(err)
+
+	time.Sleep(5 * time.Second)
+
+	err = wall.RemoveIP("myset", "39.156.66.10")
+	fatal(err)
 
 	select {}
 }
