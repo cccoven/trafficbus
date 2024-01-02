@@ -5,9 +5,9 @@
 
 char __license[] SEC("license") = "Dual MIT/GPL";
 
-#define MAX_IPS 1024
-#define MAX_IPSET 5000
-#define MAX_RULES 5000
+#define MAX_IPS 200
+#define MAX_IPSET 1024
+#define MAX_RULES 4096
 
 enum target {
     ABORTED = XDP_ABORTED,
@@ -90,11 +90,24 @@ struct {
     __type(value, struct rule);
 } rule_map SEC(".maps");
 
+struct match_log {
+    int rule_index;
+    u64 bytes;
+    // TODO
+    __u8 section[20];
+};
+
+struct {
+    __uint(type, BPF_MAP_TYPE_RINGBUF);
+    __uint(max_entries, 1 << 24);
+} match_logs SEC(".maps");
+
 // Force emitting into the ELF.
-const enum target *action __attribute__((unused));
-const enum protocol *prot __attribute__((unused));
-const enum ip_set_direction *ipsetdirectrion __attribute__((unused));
-const struct ip_item *ipitem __attribute__((unused));
+const enum target *target_t __attribute__((unused));
+const enum protocol *protocol_t __attribute__((unused));
+const enum ip_set_direction *ip_set_directrion_t __attribute__((unused));
+const struct ip_item *ip_item_t __attribute__((unused));
+const struct match_log *match_log_t __attribute__((unused));
 
 struct cbstack {
     int index;
@@ -104,6 +117,7 @@ struct cbstack {
     struct udphdr *udp;
     struct tcphdr *tcp;
     enum target action;
+    int hit;
 };
 
 static int __always_inline match_protocol(__u32 pkt_prot, __u32 rule_prot) {
@@ -211,10 +225,6 @@ static __u64 traverse_rules(void *map, __u32 *key, struct rule *rule, struct cbs
         return 0;
     }
 
-    if (!match_set(ctx->ip, rule->match_ext.set)) {
-        return 0;
-    }
-
     int hittprot;
     switch (rule->protocol) {
         case IPPROTO_ICMP:
@@ -234,7 +244,12 @@ static __u64 traverse_rules(void *map, __u32 *key, struct rule *rule, struct cbs
     }
 
     if (hittprot) {
+        if (!match_set(ctx->ip, rule->match_ext.set)) {
+            return 0;
+        }
+
         ctx->action = rule->target;
+        ctx->hit = 1;
         return 1;
     }
 
@@ -291,6 +306,17 @@ int xdp_wall_func(struct xdp_md *ctx) {
     }
 
     bpf_for_each_map_elem(&rule_map, &traverse_rules, &stack, BPF_ANY);
+
+    if (stack.hit) {
+        // send match log
+        struct match_log *log = bpf_ringbuf_reserve(&match_logs, sizeof(struct match_log), BPF_ANY);
+        if (!log) {
+            goto out;
+        }
+        log->rule_index = stack.index;
+        log->bytes = data_end - data;
+        bpf_ringbuf_submit(log, BPF_ANY);
+    }
 
 out:
     return stack.action;

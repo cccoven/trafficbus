@@ -1,21 +1,26 @@
 package xdpwall
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"log"
 	"sync"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
+	"github.com/cilium/ebpf/ringbuf"
+	"github.com/cilium/ebpf/rlimit"
 )
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -type ip_set_direction -type ip_item -target amd64 Filter xdpwall.c -- -I../include
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -type ip_set_direction -type ip_item -type match_log -target amd64 Filter xdpwall.c -- -I../include
 
-type IPSet [1024]FilterIpItem
+type IPSet [200]FilterIpItem
 
 type XdpWall struct {
-	objs  FilterObjects
-	links map[int]link.Link
+	objs       FilterObjects
+	links      map[int]link.Link
+	rbufReader *ringbuf.Reader
 	sync.Mutex
 }
 
@@ -23,7 +28,18 @@ func NewXdpWall() (*XdpWall, error) {
 	x := &XdpWall{
 		links: make(map[int]link.Link),
 	}
+	
 	err := LoadFilterObjects(&x.objs, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	err = rlimit.RemoveMemlock()
+	if err != nil {
+		return nil, err
+	}
+
+	x.rbufReader, err = ringbuf.NewReader(x.objs.MatchLogs)
 	if err != nil {
 		return nil, err
 	}
@@ -38,6 +54,7 @@ func (x *XdpWall) Stop() error {
 			return err
 		}
 	}
+	x.rbufReader.Close()
 	return x.objs.Close()
 }
 
@@ -95,4 +112,19 @@ func (x *XdpWall) UpdateRule(key uint32, value FilterRule) error {
 
 func (x *XdpWall) UpdateRules(keys []uint32, values []FilterRule) (int, error) {
 	return x.objs.RuleMap.BatchUpdate(keys, values, nil)
+}
+
+func (x *XdpWall) ReadMatchLog() (FilterMatchLog, error) {
+	var l FilterMatchLog
+	r, err := x.rbufReader.Read()
+	if err != nil {
+		return l, err
+	}
+
+	err = binary.Read(bytes.NewBuffer(r.RawSample), binary.LittleEndian, &l)
+	if err != nil {
+		return l, err
+	}
+
+	return l, nil
 }

@@ -255,6 +255,8 @@ func TestWall(t *testing.T) {
 	err = wall.Run()
 	fatal(err)
 
+	go wall.RecvMatchLogs()
+
 	// remove an IP after few seconds to see if it can match the rules normally
 	time.Sleep(10 * time.Second)
 	err = wall.RemoveIP("myset", "39.156.66.10")

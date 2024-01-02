@@ -19,7 +19,7 @@
     ],
     "rules": [
         {
-            "interface": "ens3",
+            "interface": "enp0s3",
             "target": "DROP",
             "protocol": "ICMP",
             "source": "",
@@ -32,7 +32,7 @@
             }
         },
         {
-            "interface": "ens3",
+            "interface": "enp0s3",
             "target": "ACCEPT",
             "protocol": "TCP",
             "source": "0.0.0.0/0",
@@ -44,7 +44,7 @@
             }
         },
         {
-            "interface": "ens3",
+            "interface": "enp0s3",
             "target": "DROP",
             "protocol": "UDP",
             "source": "0.0.0.0/0",

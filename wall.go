@@ -172,7 +172,7 @@ func (w *Wall) AppendIP(setName string, ips ...string) error {
 }
 
 func (w *Wall) RemoveIP(setName string, ip string) error {
-	_, ok := w.ipSets[setName]
+	ipSet, ok := w.ipSets[setName]
 	if !ok {
 		return errors.New("set does not exist")
 	}
@@ -200,9 +200,9 @@ func (w *Wall) RemoveIP(setName string, ip string) error {
 		return err
 	}
 
-	for i, addr := range w.ipSets[setName].Addrs {
+	for i, addr := range ipSet.Addrs {
 		if addr == ip {
-			w.ipSets[setName].Addrs = append(w.ipSets[setName].Addrs[:i], w.ipSets[setName].Addrs[i+1:]...)
+			ipSet.Addrs = append(ipSet.Addrs[:i], ipSet.Addrs[i+1:]...)
 			break
 		}
 	}
@@ -358,4 +358,15 @@ func (w *Wall) Run() error {
 		w.xdp.Attach(iface.Index)
 	}
 	return nil
+}
+
+func (w *Wall) RecvMatchLogs() error {
+	for {
+		mlog, err := w.xdp.ReadMatchLog()
+		if err != nil {
+			return err
+		}
+
+		log.Printf("matchIndex: %d, bytes: %d", mlog.RuleIndex, mlog.Bytes)
+	}
 }

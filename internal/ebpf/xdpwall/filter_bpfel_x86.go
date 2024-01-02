@@ -26,6 +26,12 @@ const (
 	FilterIpSetDirectionBOTH FilterIpSetDirection = 3
 )
 
+type FilterMatchLog struct {
+	RuleIndex int32
+	_         [4]byte
+	Bytes     uint64
+}
+
 type FilterProtocol uint32
 
 const (
@@ -120,8 +126,9 @@ type FilterProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type FilterMapSpecs struct {
-	IpSetMap *ebpf.MapSpec `ebpf:"ip_set_map"`
-	RuleMap  *ebpf.MapSpec `ebpf:"rule_map"`
+	IpSetMap  *ebpf.MapSpec `ebpf:"ip_set_map"`
+	MatchLogs *ebpf.MapSpec `ebpf:"match_logs"`
+	RuleMap   *ebpf.MapSpec `ebpf:"rule_map"`
 }
 
 // FilterObjects contains all objects after they have been loaded into the kernel.
@@ -143,13 +150,15 @@ func (o *FilterObjects) Close() error {
 //
 // It can be passed to LoadFilterObjects or ebpf.CollectionSpec.LoadAndAssign.
 type FilterMaps struct {
-	IpSetMap *ebpf.Map `ebpf:"ip_set_map"`
-	RuleMap  *ebpf.Map `ebpf:"rule_map"`
+	IpSetMap  *ebpf.Map `ebpf:"ip_set_map"`
+	MatchLogs *ebpf.Map `ebpf:"match_logs"`
+	RuleMap   *ebpf.Map `ebpf:"rule_map"`
 }
 
 func (m *FilterMaps) Close() error {
 	return _FilterClose(
 		m.IpSetMap,
+		m.MatchLogs,
 		m.RuleMap,
 	)
 }
