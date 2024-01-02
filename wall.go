@@ -72,11 +72,6 @@ type Rule struct {
 	TargetExtension TCPExtension   `json:"targetExtension,omitempty" yaml:"targetExtension"`
 }
 
-type RuleSet struct {
-	Iface string  `json:"iface" yaml:"iface"`
-	Rules []*Rule `json:"rules" yaml:"rules"`
-}
-
 type RuleFormat struct {
 	IPSets []*IPSet `json:"ipsets" yaml:"ipsets"`
 	Rules  []*Rule  `json:"rules"`
@@ -84,7 +79,7 @@ type RuleFormat struct {
 
 // Wall basically just a wrapper for xdpwall
 type Wall struct {
-	ipsets map[string]*IPSet
+	ipSets map[string]*IPSet
 	rules  []*Rule
 
 	xdp *xdpwall.XdpWall
@@ -92,7 +87,7 @@ type Wall struct {
 
 func NewWall() *Wall {
 	w := new(Wall)
-	w.ipsets = make(map[string]*IPSet)
+	w.ipSets = make(map[string]*IPSet)
 
 	xdpWall, err := xdpwall.NewXdpWall()
 	if err != nil {
@@ -103,72 +98,111 @@ func NewWall() *Wall {
 	return w
 }
 
+func (w *Wall) convertIP(ip string) (xdpwall.FilterIpItem, error) {
+	var err error
+	var item xdpwall.FilterIpItem
+	item.Addr, item.Mask, err = internal.ParseV4CIDRU32(ip)
+	if err != nil {
+		return item, err
+	}
+	item.Valid = 1
+
+	return item, nil
+}
+
 func (w *Wall) ListIPSet() ([]*IPSet, error) {
 	var entries []*IPSet
-	for _, ipset := range w.ipsets {
+	for _, ipset := range w.ipSets {
 		entries = append(entries, ipset)
 	}
 	return entries, nil
 }
 
 func (w *Wall) LookupIPSet(setName string) (*IPSet, error) {
-	return w.ipsets[setName], nil
+	return w.ipSets[setName], nil
 }
 
 func (w *Wall) CreateIPSet(setName string) error {
-	w.ipsets[setName] = &IPSet{Name: setName}
+	err := w.xdp.UpdateIPSet(w.str2hash(setName), xdpwall.IPSet{})
+	if err != nil {
+		return err
+	}
+	w.ipSets[setName] = &IPSet{Name: setName}
 	return nil
 }
 
+func (w *Wall) ipSetSize(set xdpwall.IPSet) int {
+	var size int
+	for _, item := range set {
+		if item.Valid == 0 {
+			break
+		}
+		size++
+	}
+	return size
+}
+
 func (w *Wall) AppendIP(setName string, ips ...string) error {
-	_, ok := w.ipsets[setName]
+	_, ok := w.ipSets[setName]
 	if !ok {
 		return errors.New("set does not exist")
 	}
+	setID := w.str2hash(setName)
+	set, err := w.xdp.LookupIPSet(setID)
+	if err != nil {
+		return err
+	}
+	size := w.ipSetSize(set)
 
-	var keys []xdpwall.FilterIpv4LpmKey
-	var values []uint32
-
-	for _, ip := range ips {
-		uip, _, err := internal.ParseV4CIDRU32(ip)
+	for i, ip := range ips {
+		item, err := w.convertIP(ip)
 		if err != nil {
 			return err
 		}
-		keys = append(keys, xdpwall.FilterIpv4LpmKey{
-			Prefixlen: 32,
-			Data:      uip,
-		})
-		values = append(values, uip)
+		set[i+size] = item
 	}
 
-	_, err := w.xdp.UpdateIPs(keys, values)
+	err = w.xdp.UpdateIPSet(setID, set)
 	if err != nil {
 		return err
 	}
 
-	w.ipsets[setName].Addrs = append(w.ipsets[setName].Addrs, ips...)
+	w.ipSets[setName].Addrs = append(w.ipSets[setName].Addrs, ips...)
 	return nil
 }
 
 func (w *Wall) RemoveIP(setName string, ip string) error {
-	_, ok := w.ipsets[setName]
+	_, ok := w.ipSets[setName]
 	if !ok {
 		return errors.New("set does not exist")
 	}
 
-	uip, _, err := internal.ParseV4CIDRU32(ip)
+	uip, umask, err := internal.ParseV4CIDRU32(ip)
 	if err != nil {
 		return err
 	}
 
-	err = w.xdp.RemoveIP(xdpwall.FilterIpv4LpmKey{Prefixlen: 32, Data: uip})
+	setID := w.str2hash(setName)
+	set, err := w.xdp.LookupIPSet(setID)
 	if err != nil {
 		return err
 	}
 
-	for i, addr := range w.ipsets[setName].Addrs {
+	// delete ip in map
+	for i, item := range set {
+		if item.Addr == uip && item.Mask == umask {
+			copy(set[i:], set[i+1:])
+			break
+		}
+	}
+	err = w.xdp.UpdateIPSet(setID, set)
+	if err != nil {
+		return err
+	}
+
+	for i, addr := range w.ipSets[setName].Addrs {
 		if addr == ip {
-			w.ipsets[setName].Addrs = append(w.ipsets[setName].Addrs[:i], w.ipsets[setName].Addrs[i+1:]...)
+			w.ipSets[setName].Addrs = append(w.ipSets[setName].Addrs[:i], w.ipSets[setName].Addrs[i+1:]...)
 			break
 		}
 	}

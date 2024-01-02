@@ -172,6 +172,9 @@ func TestIpSet(t *testing.T) {
 	err = wall.AppendIP("myset", "127.0.0.1", "0.0.0.0", "192.168.0.0/16", "1.1.1.1")
 	fatal(err)
 
+	err = wall.AppendIP("myset", "2.2.2.2")
+	fatal(err)
+
 	printIpSet(wall, "myset")
 
 	fmt.Printf("\nRemove...\n\n")
@@ -252,8 +255,8 @@ func TestWall(t *testing.T) {
 	err = wall.Run()
 	fatal(err)
 
-	time.Sleep(5 * time.Second)
-
+	// remove an IP after few seconds to see if it can match the rules normally
+	time.Sleep(10 * time.Second)
 	err = wall.RemoveIP("myset", "39.156.66.10")
 	fatal(err)
 

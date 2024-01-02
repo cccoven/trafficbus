@@ -5,7 +5,7 @@
 
 char __license[] SEC("license") = "Dual MIT/GPL";
 
-#define MAX_IPS 5000
+#define MAX_IPS 1024
 #define MAX_IPSET 5000
 #define MAX_RULES 5000
 
@@ -70,38 +70,18 @@ struct rule {
     struct target_ext target_ext;
 };
 
-struct ipv4_lpm_key {
-    __u32 prefixlen;
-    __u32 data;
-};
-
-struct ipv4_lpm_val {
-    __u32 data;
-    __u32 set_ids[MAX_IPSET];
-    __u32 set_masks[MAX_IPSET];
-    int cur;
-};
-
-struct {
-    __uint(type, BPF_MAP_TYPE_LPM_TRIE);
-    __uint(max_entries, MAX_IPS);
-    __type(key, struct ipv4_lpm_key);
-    __type(value, __u32);
-    __uint(map_flags, BPF_F_NO_PREALLOC);
-} ipset_map SEC(".maps");
-
-struct ipset_item {
-    __u32 id;
-    __u32 ip;
+struct ip_item {
+    __u32 addr;
     __u32 mask;
+    int valid; // quit loop
 };
 
 struct {
-    __uint(type, BPF_MAP_TYPE_ARRAY);
-    __uint(max_entries, MAX_IPS);
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, MAX_IPSET);
     __type(key, __u32);
-    __type(value, struct ipset_item);
-} ipset_map2 SEC(".maps");
+    __uint(value_size, sizeof(struct ip_item) * MAX_IPS);
+} ip_set_map SEC(".maps");
 
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
@@ -114,6 +94,7 @@ struct {
 const enum target *action __attribute__((unused));
 const enum protocol *prot __attribute__((unused));
 const enum ip_set_direction *ipsetdirectrion __attribute__((unused));
+const struct ip_item *ipitem __attribute__((unused));
 
 struct cbstack {
     int index;
@@ -177,20 +158,38 @@ static int __always_inline match_set(struct iphdr *ip, struct set_ext setext) {
         return 1;
     }
 
-    struct ipv4_lpm_key key = { .prefixlen = 32 };
-    if (setext.direction == SRC) {
-        key.data = bpf_htonl(ip->saddr);
-    }
-    if (setext.direction == DST) {
-        key.data = bpf_htonl(ip->daddr);
+    struct ip_item *val = bpf_map_lookup_elem(&ip_set_map, &setext.id);
+    if (val) {
+        for (int i = 0; i < MAX_IPS; i++) {
+            struct ip_item item = val[i];
+            if (!item.valid) {
+                break;
+            }
+
+            switch (setext.direction) {
+                case SRC:
+                    if (match_ip(bpf_htonl(ip->saddr), item.addr, item.mask)) {
+                        __bpf_printk("hit SRC");
+                        return 1;
+                    }
+                    break;
+                case DST:
+                    if (match_ip(bpf_htonl(ip->daddr), item.addr, item.mask)) {
+                        __bpf_printk("hit DST");
+                        return 1;
+                    }
+                    break;
+                case BOTH:
+                    if (match_ip(bpf_htonl(ip->saddr), item.addr, item.mask) && match_ip(bpf_htonl(ip->daddr), item.addr, item.mask)) {
+                        __bpf_printk("hit BOTH");
+                        return 1;
+                    }
+                    break;
+            }
+        }
     }
     
-    __u32 *val = bpf_map_lookup_elem(&ipset_map, &key);
-    if (val) {
-        __bpf_printk("hit ipset: %u", *val);
-    }
-
-    return val ? 1 : 0;
+    return 0;
 }
 
 static __u64 traverse_rules(void *map, __u32 *key, struct rule *rule, struct cbstack *ctx) {

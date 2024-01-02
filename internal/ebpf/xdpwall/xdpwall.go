@@ -9,7 +9,9 @@ import (
 	"github.com/cilium/ebpf/link"
 )
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -type ip_set_direction -target amd64 Filter xdpwall.c -- -I../include
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -type ip_set_direction -type ip_item -target amd64 Filter xdpwall.c -- -I../include
+
+type IPSet [1024]FilterIpItem
 
 type XdpWall struct {
 	objs  FilterObjects
@@ -49,7 +51,8 @@ func (x *XdpWall) Attach(iface int) error {
 		Interface: iface,
 	})
 	if err != nil {
-		log.Fatalf("could not attach xdp program: %s", err)
+		log.Printf("could not attach xdp program: %s", err)
+		return err
 	}
 
 	log.Printf("attached xdp program to iface index %d", iface)
@@ -69,16 +72,18 @@ func (x *XdpWall) Detach(iface int) error {
 	return nil
 }
 
-func (x *XdpWall) UpdateIP(key FilterIpv4LpmKey, val FilterIpv4LpmKey) error {
-	return x.objs.IpsetMap.Update(key, val, ebpf.UpdateAny)
+func (x *XdpWall) LookupIPSet(key uint32) (IPSet, error) {
+	var set IPSet
+	err := x.objs.IpSetMap.Lookup(key, &set)
+	if err != nil {
+		return set, err
+	}
+
+	return set, nil
 }
 
-func (x *XdpWall) UpdateIPs(keys []FilterIpv4LpmKey, values []uint32) (int, error) {
-	return x.objs.IpsetMap.BatchUpdate(keys, values, nil)
-}
-
-func (x *XdpWall) RemoveIP(key FilterIpv4LpmKey) error {
-	return x.objs.IpsetMap.Delete(key)
+func (x *XdpWall) UpdateIPSet(key uint32, val IPSet) error {
+	return x.objs.IpSetMap.Update(key, val, ebpf.UpdateAny)
 }
 
 // UpdateRule updates a rule.
