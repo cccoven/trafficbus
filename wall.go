@@ -331,8 +331,7 @@ func (w *Wall) AppendRule(rules ...*Rule) error {
 		values = append(values, xdpRule)
 	}
 
-	c, err := w.xdp.UpdateRules(keys, values)
-	fmt.Println(c)
+	_, err := w.xdp.UpdateRules(keys, values)
 	if err != nil {
 		return err
 	}
