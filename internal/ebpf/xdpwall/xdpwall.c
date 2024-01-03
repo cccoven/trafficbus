@@ -58,6 +58,7 @@ struct target_ext {};
 
 // common rule
 struct rule {
+    int enable;
     int interface;
     enum target target;
     enum protocol protocol;
@@ -71,9 +72,9 @@ struct rule {
 };
 
 struct ip_item {
+    int enable;
     __u32 addr;
     __u32 mask;
-    int valid; // quit loop
 };
 
 struct {
@@ -90,24 +91,22 @@ struct {
     __type(value, struct rule);
 } rule_map SEC(".maps");
 
-struct match_log {
+struct match_event {
     int rule_index;
     u64 bytes;
-    // TODO
-    __u8 section[20];
 };
 
 struct {
     __uint(type, BPF_MAP_TYPE_RINGBUF);
     __uint(max_entries, 1 << 24);
-} match_logs SEC(".maps");
+} match_events SEC(".maps");
 
 // Force emitting into the ELF.
 const enum target *target_t __attribute__((unused));
 const enum protocol *protocol_t __attribute__((unused));
 const enum ip_set_direction *ip_set_directrion_t __attribute__((unused));
 const struct ip_item *ip_item_t __attribute__((unused));
-const struct match_log *match_log_t __attribute__((unused));
+const struct match_event *match_event_t __attribute__((unused));
 
 struct cbstack {
     int index;
@@ -168,15 +167,13 @@ static int __always_inline match_tcp(struct tcphdr *tcp, struct rule *rule) {
 
 static int __always_inline match_set(struct iphdr *ip, struct set_ext setext) {
     // not set
-    if (!setext.id) {
-        return 1;
-    }
+    if (!setext.id) return 1;
 
     struct ip_item *val = bpf_map_lookup_elem(&ip_set_map, &setext.id);
     if (val) {
         for (int i = 0; i < MAX_IPS; i++) {
             struct ip_item item = val[i];
-            if (!item.valid) {
+            if (!item.enable) {
                 break;
             }
 
@@ -207,11 +204,13 @@ static int __always_inline match_set(struct iphdr *ip, struct set_ext setext) {
 }
 
 static __u64 traverse_rules(void *map, __u32 *key, struct rule *rule, struct cbstack *ctx) {
-    // exit
-    if (!rule->interface) return 1;
-    // go to next
-    if (rule->interface != ctx->raw->ingress_ifindex) return 0;
+    if (!rule->enable) return 1;
+
     ctx->index = *key;
+
+    if (rule->interface && rule->interface != ctx->raw->ingress_ifindex) {
+        return 0;
+    }
 
     // __bpf_printk("index: %d, prot: %d", ctx->index, rule->protocol);
 
@@ -308,14 +307,14 @@ int xdp_wall_func(struct xdp_md *ctx) {
     bpf_for_each_map_elem(&rule_map, &traverse_rules, &stack, BPF_ANY);
 
     if (stack.hit) {
-        // send match log
-        struct match_log *log = bpf_ringbuf_reserve(&match_logs, sizeof(struct match_log), BPF_ANY);
-        if (!log) {
+        // send match event
+        struct match_event *evt = bpf_ringbuf_reserve(&match_events, sizeof(struct match_event), BPF_ANY);
+        if (!evt) {
             goto out;
         }
-        log->rule_index = stack.index;
-        log->bytes = data_end - data;
-        bpf_ringbuf_submit(log, BPF_ANY);
+        evt->rule_index = stack.index;
+        evt->bytes = data_end - data;
+        bpf_ringbuf_submit(evt, BPF_ANY);
     }
 
 out:

@@ -1,5 +1,5 @@
 {
-    "ipsets": [
+    "sets": [
         {
             "name": "myset",
             "addrs": [
@@ -19,7 +19,19 @@
     ],
     "rules": [
         {
-            "interface": "enp0s3",
+            "interface": "lo",
+            "target": "DROP",
+            "protocol": "TCP",
+            "source": "0.0.0.0/0",
+            "destination": "0.0.0.0",
+            "matchExtension": {
+                "tcp": {
+                    "dstPort": 8080
+                }
+            }
+        },
+        {
+            "interface": "",
             "target": "DROP",
             "protocol": "ICMP",
             "source": "",
@@ -32,19 +44,7 @@
             }
         },
         {
-            "interface": "enp0s3",
-            "target": "ACCEPT",
-            "protocol": "TCP",
-            "source": "0.0.0.0/0",
-            "destination": "0.0.0.0",
-            "matchExtension": {
-                "tcp": {
-                    "dstPort": 8080
-                }
-            }
-        },
-        {
-            "interface": "enp0s3",
+            "interface": "",
             "target": "DROP",
             "protocol": "UDP",
             "source": "0.0.0.0/0",

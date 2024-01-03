@@ -6,6 +6,8 @@ import (
 	"net"
 	"testing"
 	"time"
+
+	"github.com/cccoven/trafficbus/internal"
 )
 
 func echoServerTCP(addr string) {
@@ -150,20 +152,19 @@ func fatal(err error) {
 	}
 }
 
-func printIpSet(wall *Wall, setName string) {
-	ipset, err := wall.LookupIPSet(setName)
-	if err != nil {
-		log.Fatal(err)
-	}
+func printIPSet(wall *Wall, setName string) {
+	set, err := wall.LookupIPSet(setName)
+	fatal(err)
 
-	fmt.Printf("Name:\t%s\n", ipset.Name)
-	fmt.Println("Addresses: ")
-	for _, addr := range ipset.Addrs {
-		fmt.Printf("\t%s\n", addr)
+	setRaw, err := wall.xdp.LookupIPSet(wall.genIPSetID(setName))
+	fatal(err)
+
+	for i, addr := range set.Addrs {
+		fmt.Printf("addr: %-20sraw: %-20s\n", addr, internal.IntToIP(setRaw[i].Addr))
 	}
 }
 
-func TestIpSet(t *testing.T) {
+func TestIPSet(t *testing.T) {
 	wall := NewWall()
 
 	err := wall.CreateIPSet("myset")
@@ -175,7 +176,7 @@ func TestIpSet(t *testing.T) {
 	err = wall.AppendIP("myset", "2.2.2.2")
 	fatal(err)
 
-	printIpSet(wall, "myset")
+	printIPSet(wall, "myset")
 
 	fmt.Printf("\nRemove...\n\n")
 
@@ -184,7 +185,7 @@ func TestIpSet(t *testing.T) {
 	err = wall.RemoveIP("myset", "1.1.1.1")
 	fatal(err)
 
-	printIpSet(wall, "myset")
+	printIPSet(wall, "myset")
 }
 
 func printRules(wall *Wall) {
@@ -193,8 +194,20 @@ func printRules(wall *Wall) {
 		log.Fatal(err)
 	}
 
+	rulesRaw := wall.xdp.ListRules()
+
 	for i, rule := range rules {
-		fmt.Printf("index: %d, interface: %s, target: %s, protocol: %s, source: %s, destination: %s\n", i, rule.Interface, rule.Target, rule.Protocol, rule.Source, rule.Destination)
+		fmt.Printf(
+			"iface: %-10sifaceRaw: %-10dprot: %-10sprotRaw: %-10dsrc: %-20ssrcRaw: %-20sdst: %-20sdstRaw: %-20s\n",
+			rule.Interface,
+			rulesRaw[i].Interface,
+			rule.Protocol,
+			rulesRaw[i].Protocol,
+			rule.Source,
+			internal.IntToIP(rulesRaw[i].Source),
+			rule.Destination,
+			internal.IntToIP(rulesRaw[i].Destination),
+		)
 	}
 }
 
@@ -237,25 +250,34 @@ func TestLoadFromJson(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fmt.Println("ipset:")
-	printIpSet(wall, "myset")
+	fmt.Println("ipSet:")
+	printIPSet(wall, "myset")
 
 	fmt.Println("rules:")
 	printRules(wall)
 }
 
-func TestLoadFromYaml(t *testing.T) {}
+func TestLoadFromYaml(t *testing.T) {
+	wall := NewWall()
+	err := wall.LoadFromYaml("./testdata/rule.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fmt.Println("ipSet:")
+	printIPSet(wall, "myset")
+
+	fmt.Println("rules:")
+	printRules(wall)
+}
 
 func TestWall(t *testing.T) {
 	runServers()
 	wall := NewWall()
-	err := wall.LoadFromJson("./testdata/rule.json")
+	err := wall.LoadFromYaml("./testdata/rule.yaml")
 	fatal(err)
 
-	err = wall.Run()
-	fatal(err)
-
-	go wall.RecvMatchLogs()
+	go wall.Run()
 
 	// remove an IP after few seconds to see if it can match the rules normally
 	time.Sleep(10 * time.Second)

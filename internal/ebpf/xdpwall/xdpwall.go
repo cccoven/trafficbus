@@ -13,7 +13,7 @@ import (
 	"github.com/cilium/ebpf/rlimit"
 )
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -type ip_set_direction -type ip_item -type match_log -target amd64 Filter xdpwall.c -- -I../include
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -type ip_set_direction -type ip_item -type match_event -target amd64 Filter xdpwall.c -- -I../include
 
 type IPSet [200]FilterIpItem
 
@@ -28,7 +28,7 @@ func NewXdpWall() (*XdpWall, error) {
 	x := &XdpWall{
 		links: make(map[int]link.Link),
 	}
-	
+
 	err := LoadFilterObjects(&x.objs, nil)
 	if err != nil {
 		return nil, err
@@ -39,7 +39,7 @@ func NewXdpWall() (*XdpWall, error) {
 		return nil, err
 	}
 
-	x.rbufReader, err = ringbuf.NewReader(x.objs.MatchLogs)
+	x.rbufReader, err = ringbuf.NewReader(x.objs.MatchEvents)
 	if err != nil {
 		return nil, err
 	}
@@ -103,6 +103,21 @@ func (x *XdpWall) UpdateIPSet(key uint32, val IPSet) error {
 	return x.objs.IpSetMap.Update(key, val, ebpf.UpdateAny)
 }
 
+func (x *XdpWall) ListRules() []FilterRule {
+	var key uint32
+	var val FilterRule
+	var rules []FilterRule
+
+	iter := x.objs.RuleMap.Iterate()
+	for iter.Next(&key, &val) {
+		if val.Enable == 1 {
+			rules = append(rules, val)
+		}
+	}
+
+	return rules
+}
+
 // UpdateRule updates a rule.
 // Since the array is of constant size, deletion operations is not supported.
 // To clear an array element, use Update to insert a zero value to that index.
@@ -114,8 +129,8 @@ func (x *XdpWall) UpdateRules(keys []uint32, values []FilterRule) (int, error) {
 	return x.objs.RuleMap.BatchUpdate(keys, values, nil)
 }
 
-func (x *XdpWall) ReadMatchLog() (FilterMatchLog, error) {
-	var l FilterMatchLog
+func (x *XdpWall) ReadMatchEvent() (FilterMatchEvent, error) {
+	var l FilterMatchEvent
 	r, err := x.rbufReader.Read()
 	if err != nil {
 		return l, err

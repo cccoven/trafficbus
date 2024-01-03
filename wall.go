@@ -3,6 +3,7 @@ package trafficbus
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"hash/fnv"
 	"log"
 	"net"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/cccoven/trafficbus/internal"
 	"github.com/cccoven/trafficbus/internal/ebpf/xdpwall"
+	"github.com/spf13/viper"
 )
 
 var (
@@ -63,6 +65,9 @@ type MatchExtension struct {
 type TargetExtension struct{}
 
 type Rule struct {
+	Packets int
+	Bytes   uint64
+
 	Interface       string         `json:"interface"`
 	Target          string         `json:"target" yaml:"target"`
 	Protocol        string         `json:"protocol" yaml:"protocol"`
@@ -73,8 +78,8 @@ type Rule struct {
 }
 
 type RuleFormat struct {
-	IPSets []*IPSet `json:"ipsets" yaml:"ipsets"`
-	Rules  []*Rule  `json:"rules"`
+	IPSets []*IPSet `json:"sets" yaml:"ipSets"`
+	Rules  []*Rule  `json:"rules" yaml:"rules"`
 }
 
 // Wall basically just a wrapper for xdpwall
@@ -100,12 +105,13 @@ func NewWall() *Wall {
 
 func (w *Wall) convertIP(ip string) (xdpwall.FilterIpItem, error) {
 	var err error
-	var item xdpwall.FilterIpItem
+	item := xdpwall.FilterIpItem{
+		Enable: 1,
+	}
 	item.Addr, item.Mask, err = internal.ParseV4CIDRU32(ip)
 	if err != nil {
 		return item, err
 	}
-	item.Valid = 1
 
 	return item, nil
 }
@@ -123,7 +129,7 @@ func (w *Wall) LookupIPSet(setName string) (*IPSet, error) {
 }
 
 func (w *Wall) CreateIPSet(setName string) error {
-	err := w.xdp.UpdateIPSet(w.str2hash(setName), xdpwall.IPSet{})
+	err := w.xdp.UpdateIPSet(w.genIPSetID(setName), xdpwall.IPSet{})
 	if err != nil {
 		return err
 	}
@@ -131,10 +137,10 @@ func (w *Wall) CreateIPSet(setName string) error {
 	return nil
 }
 
-func (w *Wall) ipSetSize(set xdpwall.IPSet) int {
+func (w *Wall) enabledIPSize(set xdpwall.IPSet) int {
 	var size int
 	for _, item := range set {
-		if item.Valid == 0 {
+		if item.Enable == 0 {
 			break
 		}
 		size++
@@ -147,12 +153,12 @@ func (w *Wall) AppendIP(setName string, ips ...string) error {
 	if !ok {
 		return errors.New("set does not exist")
 	}
-	setID := w.str2hash(setName)
+	setID := w.genIPSetID(setName)
 	set, err := w.xdp.LookupIPSet(setID)
 	if err != nil {
 		return err
 	}
-	size := w.ipSetSize(set)
+	size := w.enabledIPSize(set)
 
 	for i, ip := range ips {
 		item, err := w.convertIP(ip)
@@ -182,7 +188,7 @@ func (w *Wall) RemoveIP(setName string, ip string) error {
 		return err
 	}
 
-	setID := w.str2hash(setName)
+	setID := w.genIPSetID(setName)
 	set, err := w.xdp.LookupIPSet(setID)
 	if err != nil {
 		return err
@@ -210,25 +216,29 @@ func (w *Wall) RemoveIP(setName string, ip string) error {
 	return nil
 }
 
-// str2hash use uint32 hash as ipset name
-func (w *Wall) str2hash(s string) uint32 {
+// genIPSetID use uint32 hash as ipset name
+func (w *Wall) genIPSetID(s string) uint32 {
+	if s == "" {
+		return 0
+	}
 	hasher := fnv.New32()
 	hasher.Write([]byte(s))
 	return hasher.Sum32()
 }
 
 func (w *Wall) convertRule(rule *Rule) (xdpwall.FilterRule, error) {
-	var ret xdpwall.FilterRule
 	var err error
+	iface, _ := net.InterfaceByName(rule.Interface)
 
-	iface, err := net.InterfaceByName(rule.Interface)
-	if err != nil {
-		return ret, err
+	ret := xdpwall.FilterRule{
+		Enable:    1,
+		Interface: 0,
+		Target:    xdpTargetMap[rule.Target],
+		Protocol:  xdpProtocolMap[rule.Protocol],
 	}
-
-	ret.Interface = int32(iface.Index)
-	ret.Target = xdpTargetMap[rule.Target]
-	ret.Protocol = xdpProtocolMap[rule.Protocol]
+	if iface != nil {
+		ret.Interface = int32(iface.Index)
+	}
 
 	ret.Source, ret.SourceMask, err = internal.ParseV4CIDRU32(rule.Source)
 	if err != nil {
@@ -241,7 +251,7 @@ func (w *Wall) convertRule(rule *Rule) (xdpwall.FilterRule, error) {
 	}
 
 	// ip set
-	ret.MatchExt.Set.Id = w.str2hash(rule.MatchExtension.Set.Name)
+	ret.MatchExt.Set.Id = w.genIPSetID(rule.MatchExtension.Set.Name)
 	ret.MatchExt.Set.Direction = xdpIpSetTypeMap[rule.MatchExtension.Set.Direction]
 
 	// udp
@@ -260,18 +270,41 @@ func (w *Wall) ListRule() ([]*Rule, error) {
 }
 
 func (w *Wall) InsertRule(pos int, rule *Rule) error {
+	rules := w.xdp.ListRules()
+	size := len(rules)
+
+	if pos > size {
+		return fmt.Errorf("pos %d out of range", pos)
+	}
+
 	xdpRule, err := w.convertRule(rule)
 	if err != nil {
 		return err
 	}
-	err = w.xdp.UpdateRule(uint32(pos), xdpRule)
-	if err != nil {
-		return err
-	}
 
-	if pos == len(w.rules) {
+	if pos == size {
+		err = w.xdp.UpdateRule(uint32(pos), xdpRule)
+		if err != nil {
+			return err
+		}
 		w.rules = append(w.rules, rule)
 		return nil
+	}
+
+	rules = append(rules, xdpwall.FilterRule{})
+	copy(rules[pos+1:], rules[pos:])
+	rules[pos] = xdpRule
+	size++
+
+	var keys []uint32
+	var values []xdpwall.FilterRule
+	for i := pos; i < size; i++ {
+		keys = append(keys, uint32(i))
+		values = append(values, rules[i])
+	}
+	_, err = w.xdp.UpdateRules(keys, values)
+	if err != nil {
+		return err
 	}
 
 	w.rules = append(w.rules, nil)
@@ -281,20 +314,25 @@ func (w *Wall) InsertRule(pos int, rule *Rule) error {
 }
 
 func (w *Wall) AppendRule(rules ...*Rule) error {
+	if len(rules) == 0 {
+		return nil
+	}
+
 	var keys []uint32
 	var values []xdpwall.FilterRule
-	l := len(w.rules)
 
+	size := len(w.xdp.ListRules())
 	for i, r := range rules {
 		xdpRule, err := w.convertRule(r)
 		if err != nil {
 			return err
 		}
-		keys = append(keys, uint32(i+l))
+		keys = append(keys, uint32(i+size))
 		values = append(values, xdpRule)
 	}
 
-	_, err := w.xdp.UpdateRules(keys, values)
+	c, err := w.xdp.UpdateRules(keys, values)
+	fmt.Println(c)
 	if err != nil {
 		return err
 	}
@@ -304,28 +342,41 @@ func (w *Wall) AppendRule(rules ...*Rule) error {
 }
 
 func (w *Wall) RemoveRule(pos int) error {
-	err := w.xdp.UpdateRule(uint32(pos), xdpwall.FilterRule{})
-	if err != nil {
-		return err
+	rules := w.xdp.ListRules()
+	size := len(rules)
+
+	if pos > size {
+		return fmt.Errorf("pos %d out of range", pos)
 	}
+
+	if pos == size {
+		err := w.xdp.UpdateRule(uint32(pos), xdpwall.FilterRule{})
+		if err != nil {
+			return err
+		}
+	} else {
+		copy(rules[pos:], rules[pos+1:])
+		size--
+
+		var keys []uint32
+		var values []xdpwall.FilterRule
+		for i := pos; i < size; i++ {
+			keys = append(keys, uint32(i))
+			values = append(values, rules[i])
+		}
+		_, err := w.xdp.UpdateRules(keys, values)
+		if err != nil {
+			return err
+		}
+	}
+
 	w.rules = append(w.rules[:pos], w.rules[pos+1:]...)
 	return nil
 }
 
-func (w *Wall) LoadFromJson(f string) error {
-	data, err := os.ReadFile(f)
-	if err != nil {
-		return err
-	}
-
-	var ruleFormat RuleFormat
-	err = json.Unmarshal(data, &ruleFormat)
-	if err != nil {
-		return err
-	}
-
-	for _, ipset := range ruleFormat.IPSets {
-		err = w.CreateIPSet(ipset.Name)
+func (w *Wall) loadFormat(f *RuleFormat) error {
+	for _, ipset := range f.IPSets {
+		err := w.CreateIPSet(ipset.Name)
 		if err != nil {
 			return err
 		}
@@ -335,7 +386,7 @@ func (w *Wall) LoadFromJson(f string) error {
 		}
 	}
 
-	err = w.AppendRule(ruleFormat.Rules...)
+	err := w.AppendRule(f.Rules...)
 	if err != nil {
 		return err
 	}
@@ -343,9 +394,37 @@ func (w *Wall) LoadFromJson(f string) error {
 	return nil
 }
 
-func (w *Wall) LoadFromYaml(f string) error {
+func (w *Wall) LoadFromJson(f string) error {
+	data, err := os.ReadFile(f)
+	if err != nil {
+		return err
+	}
 
-	return nil
+	var ruleFormat *RuleFormat
+	err = json.Unmarshal(data, &ruleFormat)
+	if err != nil {
+		return err
+	}
+
+	return w.loadFormat(ruleFormat)
+}
+
+func (w *Wall) LoadFromYaml(f string) error {
+	v := viper.New()
+	v.SetConfigType("yaml")
+	v.SetConfigFile(f)
+	err := v.ReadInConfig()
+	if err != nil {
+		return err
+	}
+
+	var ruleFormat *RuleFormat
+	err = v.Unmarshal(&ruleFormat)
+	if err != nil {
+		return err
+	}
+	
+	return w.loadFormat(ruleFormat)
 }
 
 func (w *Wall) Run() error {
@@ -357,16 +436,28 @@ func (w *Wall) Run() error {
 	for _, iface := range ifaces {
 		w.xdp.Attach(iface.Index)
 	}
-	return nil
+
+	w.listenMatchEvent()
+
+	return err
 }
 
-func (w *Wall) RecvMatchLogs() error {
+func (w *Wall) listenMatchEvent() {
 	for {
-		mlog, err := w.xdp.ReadMatchLog()
+		evt, err := w.xdp.ReadMatchEvent()
 		if err != nil {
-			return err
+			log.Printf("failed to read match event: %s", err.Error())
+			continue
 		}
 
-		log.Printf("matchIndex: %d, bytes: %d", mlog.RuleIndex, mlog.Bytes)
+		rule := w.rules[evt.RuleIndex]
+		if rule == nil {
+			continue
+		}
+
+		rule.Packets++
+		rule.Bytes += evt.Bytes
+
+		log.Printf("rule.index: %d, rule.pkts: %d, rule.bytes: %d", evt.RuleIndex, rule.Packets, rule.Bytes)
 	}
 }
