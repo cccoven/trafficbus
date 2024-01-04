@@ -211,7 +211,7 @@ static int __always_inline match_set(struct iphdr *ip, struct set_ext setext) {
     return 0;
 }
 
-static int __always_inline match_multi_port() {
+static int __always_inline match_multi_port(u16 sport, u16 dport, struct multi_port_ext ext) {
     return 0;
 }
 
@@ -238,16 +238,25 @@ static __u64 traverse_rules(void *map, __u32 *key, struct rule *rule, struct cbs
     }
 
     int hitprot;
+    u16 sport, dport;
     switch (rule->protocol) {
         case IPPROTO_ICMP:
             // TODO
             hitprot = 1;
             break;
         case IPPROTO_UDP:
-            if (ctx->udp) hitprot = match_udp(ctx->udp, rule);
+            if (ctx->udp) {
+                sport = ctx->udp->source;
+                dport = ctx->udp->dest;
+                hitprot = match_udp(ctx->udp, rule);
+            }
             break;
         case IPPROTO_TCP:
-            if (ctx->tcp) hitprot = match_tcp(ctx->tcp, rule);
+            if (ctx->tcp) {
+                sport = ctx->tcp->source;
+                dport = ctx->tcp->dest;
+                hitprot = match_tcp(ctx->tcp, rule);
+            }
             break;
         default:
             // support empty rule
@@ -258,7 +267,7 @@ static __u64 traverse_rules(void *map, __u32 *key, struct rule *rule, struct cbs
     if (hitprot) {
         // matched the basic rule, now enter the extension
         if (!match_set(ctx->ip, rule->match_ext.set)) return 0;
-        if (!match_multi_port()) return 0;
+        if (!match_multi_port(sport, dport, rule->match_ext.multi_port)) return 0;
 
         ctx->action = rule->target;
         ctx->hit = 1;
@@ -309,7 +318,6 @@ int xdp_wall_func(struct xdp_md *ctx) {
             stack.udp = udp;
             break;
         case IPPROTO_TCP:
-            // struct tcphdr *tcp;
             if (!parse_tcphdr(&cur, data_end, &tcp)) {
                 goto out;
             }
