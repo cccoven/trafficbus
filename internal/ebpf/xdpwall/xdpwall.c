@@ -30,6 +30,19 @@ enum ip_set_direction {
     BOTH,
 };
 
+struct ip_item {
+    int enable;
+    __u32 addr;
+    __u32 mask;
+};
+
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, MAX_IPSET);
+    __type(key, __u32);
+    __uint(value_size, sizeof(struct ip_item) * MAX_IPS);
+} ip_set_map SEC(".maps");
+
 struct set_ext {
     u32 id;
     enum ip_set_direction direction;
@@ -46,12 +59,22 @@ struct tcp_ext {
     u16 dport;
 };
 
+struct ip_pair {
+    u16 port;
+    u16 max;
+};
+
+struct multi_port_ext {
+    struct ip_pair src[10];
+    struct ip_pair dst[10];
+};
+
 // example: -m comment --comment "foo"
 struct match_ext {
     struct set_ext set;
     struct udp_ext udp;
     struct tcp_ext tcp;
-    u16 multiport;
+    struct multi_port_ext multi_port;
 };
 
 struct target_ext {};
@@ -70,19 +93,6 @@ struct rule {
     struct match_ext match_ext;
     struct target_ext target_ext;
 };
-
-struct ip_item {
-    int enable;
-    __u32 addr;
-    __u32 mask;
-};
-
-struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
-    __uint(max_entries, MAX_IPSET);
-    __type(key, __u32);
-    __uint(value_size, sizeof(struct ip_item) * MAX_IPS);
-} ip_set_map SEC(".maps");
 
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
@@ -128,8 +138,8 @@ static int __always_inline match_protocol(__u32 pkt_prot, __u32 rule_prot) {
 }
 
 static int __always_inline match_ip(__u32 pktip, __u32 ruleip, __u32 ruleip_mask) {
+    // all address
     if (!ruleip) { 
-        // all address
         return 1;
     }
 
@@ -170,36 +180,38 @@ static int __always_inline match_set(struct iphdr *ip, struct set_ext setext) {
     if (!setext.id) return 1;
 
     struct ip_item *val = bpf_map_lookup_elem(&ip_set_map, &setext.id);
-    if (val) {
-        for (int i = 0; i < MAX_IPS; i++) {
-            struct ip_item item = val[i];
-            if (!item.enable) {
-                break;
-            }
+    if (!val) {
+        return 0;
+    }
 
-            switch (setext.direction) {
-                case SRC:
-                    if (match_ip(bpf_htonl(ip->saddr), item.addr, item.mask)) {
-                        __bpf_printk("hit SRC");
-                        return 1;
-                    }
-                    break;
-                case DST:
-                    if (match_ip(bpf_htonl(ip->daddr), item.addr, item.mask)) {
-                        __bpf_printk("hit DST");
-                        return 1;
-                    }
-                    break;
-                case BOTH:
-                    if (match_ip(bpf_htonl(ip->saddr), item.addr, item.mask) && match_ip(bpf_htonl(ip->daddr), item.addr, item.mask)) {
-                        __bpf_printk("hit BOTH");
-                        return 1;
-                    }
-                    break;
-            }
+    for (int i = 0; i < MAX_IPS; i++) {
+        struct ip_item item = val[i];
+        if (!item.enable) {
+            break;
+        }
+
+        switch (setext.direction) {
+            case SRC:
+                if (match_ip(bpf_htonl(ip->saddr), item.addr, item.mask)) return 1;
+                break;
+            case DST:
+                if (match_ip(bpf_htonl(ip->daddr), item.addr, item.mask)) return 1;
+                break;
+            case BOTH:
+                if (
+                    match_ip(bpf_htonl(ip->saddr), item.addr, item.mask) && 
+                    match_ip(bpf_htonl(ip->daddr), item.addr, item.mask)
+                ) {
+                    return 1;
+                }
+                break;
         }
     }
     
+    return 0;
+}
+
+static int __always_inline match_multi_port() {
     return 0;
 }
 
@@ -218,34 +230,35 @@ static __u64 traverse_rules(void *map, __u32 *key, struct rule *rule, struct cbs
         return 0;
     }
 
-    int hitsip = match_ip(bpf_htonl(ctx->ip->saddr), rule->source, rule->source_mask);
-    int hitdip = match_ip(bpf_htonl(ctx->ip->daddr), rule->destination, rule->destination_mask);
-    if (!hitsip || !hitdip) {
+    if (
+        !match_ip(bpf_htonl(ctx->ip->saddr), rule->source, rule->source_mask) || 
+        !match_ip(bpf_htonl(ctx->ip->daddr), rule->destination, rule->destination_mask)
+    ) {
         return 0;
     }
 
-    int hittprot;
+    int hitprot;
     switch (rule->protocol) {
         case IPPROTO_ICMP:
             // TODO
-            hittprot = 1;
+            hitprot = 1;
             break;
         case IPPROTO_UDP:
-            if (ctx->udp) hittprot = match_udp(ctx->udp, rule);
+            if (ctx->udp) hitprot = match_udp(ctx->udp, rule);
             break;
         case IPPROTO_TCP:
-            if (ctx->tcp) hittprot = match_tcp(ctx->tcp, rule);
+            if (ctx->tcp) hitprot = match_tcp(ctx->tcp, rule);
             break;
         default:
             // support empty rule
-            hittprot = 1;
+            hitprot = 1;
             break;
     }
 
-    if (hittprot) {
-        if (!match_set(ctx->ip, rule->match_ext.set)) {
-            return 0;
-        }
+    if (hitprot) {
+        // matched the basic rule, now enter the extension
+        if (!match_set(ctx->ip, rule->match_ext.set)) return 0;
+        if (!match_multi_port()) return 0;
 
         ctx->action = rule->target;
         ctx->hit = 1;

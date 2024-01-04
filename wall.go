@@ -8,6 +8,8 @@ import (
 	"log"
 	"net"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/cccoven/trafficbus/internal"
 	"github.com/cccoven/trafficbus/internal/ebpf/xdpwall"
@@ -56,10 +58,16 @@ type TCPExtension struct {
 	DstPort int `json:"dstPort" yaml:"dstPort"`
 }
 
+type MultiPortExtension struct {
+	Src string `json:"src" yaml:"src"`
+	Dst string `json:"dst" yaml:"dst"`
+}
+
 type MatchExtension struct {
-	Set SetExtension `json:"set,omitempty" yaml:"set"`
-	UDP UDPExtension `json:"udp,omitempty" yaml:"udp"`
-	TCP TCPExtension `json:"tcp,omitempty" yaml:"tcp"`
+	Set       SetExtension       `json:"set,omitempty" yaml:"set"`
+	UDP       UDPExtension       `json:"udp,omitempty" yaml:"udp"`
+	TCP       TCPExtension       `json:"tcp,omitempty" yaml:"tcp"`
+	MultiPort MultiPortExtension `json:"multiPort" yaml:"multiPort"`
 }
 
 type TargetExtension struct{}
@@ -226,7 +234,31 @@ func (w *Wall) genIPSetID(s string) uint32 {
 	return hasher.Sum32()
 }
 
-func (w *Wall) convertRule(rule *Rule) (xdpwall.FilterRule, error) {
+func (w *Wall) parseMultiPort(raw string) (port uint16, maxPort uint16, err error) {
+	var p, m uint64
+	if strings.Contains(raw, ":") {
+		portRange := strings.Split(raw, ":")
+		p, err = strconv.ParseUint(portRange[0], 10, 16)
+		if err != nil {
+			return
+		}
+		m, err = strconv.ParseUint(portRange[1], 10, 16)
+		if err != nil {
+			return
+		}
+	} else {
+		p, err = strconv.ParseUint(raw, 10, 16)
+		if err != nil {
+			return
+		}
+	}
+
+	port = uint16(p)
+	maxPort = uint16(m)
+	return
+}
+
+func (w *Wall) parseRule(rule *Rule) (xdpwall.FilterRule, error) {
 	var err error
 	iface, _ := net.InterfaceByName(rule.Interface)
 
@@ -262,6 +294,30 @@ func (w *Wall) convertRule(rule *Rule) (xdpwall.FilterRule, error) {
 	ret.MatchExt.Tcp.Sport = uint16(rule.MatchExtension.TCP.SrcPort)
 	ret.MatchExt.Tcp.Dport = uint16(rule.MatchExtension.TCP.DstPort)
 
+	// multi ports
+	if rule.MatchExtension.MultiPort.Src != "" {
+		ports := strings.Split(rule.MatchExtension.MultiPort.Src, ",")
+		for i, p := range ports {
+			port, maxPort, err := w.parseMultiPort(p)
+			if err != nil {
+				return ret, err
+			}
+			ret.MatchExt.MultiPort.Src[i].Port = port
+			ret.MatchExt.MultiPort.Src[i].Max = maxPort
+		}
+	}
+	if rule.MatchExtension.MultiPort.Dst != "" {
+		ports := strings.Split(rule.MatchExtension.MultiPort.Dst, ",")
+		for i, p := range ports {
+			port, maxPort, err := w.parseMultiPort(p)
+			if err != nil {
+				return ret, err
+			}
+			ret.MatchExt.MultiPort.Dst[i].Port = port
+			ret.MatchExt.MultiPort.Dst[i].Max = maxPort
+		}
+	}
+
 	return ret, nil
 }
 
@@ -277,7 +333,7 @@ func (w *Wall) InsertRule(pos int, rule *Rule) error {
 		return fmt.Errorf("pos %d out of range", pos)
 	}
 
-	xdpRule, err := w.convertRule(rule)
+	xdpRule, err := w.parseRule(rule)
 	if err != nil {
 		return err
 	}
@@ -323,7 +379,7 @@ func (w *Wall) AppendRule(rules ...*Rule) error {
 
 	size := len(w.xdp.ListRules())
 	for i, r := range rules {
-		xdpRule, err := w.convertRule(r)
+		xdpRule, err := w.parseRule(r)
 		if err != nil {
 			return err
 		}
@@ -422,7 +478,7 @@ func (w *Wall) LoadFromYaml(f string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	return w.loadFormat(ruleFormat)
 }
 
@@ -439,6 +495,10 @@ func (w *Wall) Run() error {
 	w.listenMatchEvent()
 
 	return err
+}
+
+func (w *Wall) Stop() error {
+	return w.xdp.Stop()
 }
 
 func (w *Wall) listenMatchEvent() {

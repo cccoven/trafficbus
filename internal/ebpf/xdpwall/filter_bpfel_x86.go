@@ -62,8 +62,16 @@ type FilterRule struct {
 			Sport uint16
 			Dport uint16
 		}
-		Multiport uint16
-		_         [2]byte
+		MultiPort struct {
+			Src [10]struct {
+				Port uint16
+				Max  uint16
+			}
+			Dst [10]struct {
+				Port uint16
+				Max  uint16
+			}
+		}
 	}
 	TargetExt struct{}
 }

@@ -280,9 +280,9 @@ func TestWall(t *testing.T) {
 	go wall.Run()
 
 	// remove an IP after few seconds to see if it can match the rules normally
-	time.Sleep(10 * time.Second)
-	err = wall.RemoveIP("myset", "39.156.66.10")
-	fatal(err)
+	// time.Sleep(10 * time.Second)
+	// err = wall.RemoveIP("myset", "39.156.66.10")
+	// fatal(err)
 
 	select {}
 }
