@@ -10,7 +10,7 @@ ipSets:
       - 39.156.66.10
       - 127.0.0.1
 rules:
-  - target: DROP
+  - target: ACCEPT
     protocol: TCP
     source: 0.0.0.0/0
     destination: 0.0.0.0
@@ -37,3 +37,6 @@ rules:
     matchExtension:
       udp:
         dstPort: 8081
+      multiPort: 
+        src: 8080,8081,8000:9000
+        dst: 8080,8081,8000:9000

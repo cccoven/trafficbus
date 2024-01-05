@@ -64,10 +64,10 @@ type MultiPortExtension struct {
 }
 
 type MatchExtension struct {
-	Set       SetExtension       `json:"set,omitempty" yaml:"set"`
-	UDP       UDPExtension       `json:"udp,omitempty" yaml:"udp"`
-	TCP       TCPExtension       `json:"tcp,omitempty" yaml:"tcp"`
-	MultiPort MultiPortExtension `json:"multiPort" yaml:"multiPort"`
+	Set       *SetExtension       `json:"set,omitempty" yaml:"set"`
+	UDP       *UDPExtension       `json:"udp,omitempty" yaml:"udp"`
+	TCP       *TCPExtension       `json:"tcp,omitempty" yaml:"tcp"`
+	MultiPort *MultiPortExtension `json:"multiPort" yaml:"multiPort"`
 }
 
 type TargetExtension struct{}
@@ -76,13 +76,13 @@ type Rule struct {
 	Packets int
 	Bytes   uint64
 
-	Interface       string         `json:"interface"`
-	Target          string         `json:"target" yaml:"target"`
-	Protocol        string         `json:"protocol" yaml:"protocol"`
-	Source          string         `json:"source" yaml:"source"`
-	Destination     string         `json:"destination" yaml:"destination"`
-	MatchExtension  MatchExtension `json:"matchExtension,omitempty" yaml:"matchExtension"`
-	TargetExtension TCPExtension   `json:"targetExtension,omitempty" yaml:"targetExtension"`
+	Interface       string           `json:"interface"`
+	Target          string           `json:"target" yaml:"target"`
+	Protocol        string           `json:"protocol" yaml:"protocol"`
+	Source          string           `json:"source" yaml:"source"`
+	Destination     string           `json:"destination" yaml:"destination"`
+	MatchExtension  *MatchExtension  `json:"matchExtension,omitempty" yaml:"matchExtension"`
+	TargetExtension *TargetExtension `json:"targetExtension,omitempty" yaml:"targetExtension"`
 }
 
 type RuleFormat struct {
@@ -260,14 +260,14 @@ func (w *Wall) parseMultiPort(raw string) (port uint16, maxPort uint16, err erro
 
 func (w *Wall) parseRule(rule *Rule) (xdpwall.FilterRule, error) {
 	var err error
-	iface, _ := net.InterfaceByName(rule.Interface)
-
 	ret := xdpwall.FilterRule{
 		Enable:    1,
 		Interface: 0,
 		Target:    xdpTargetMap[rule.Target],
 		Protocol:  xdpProtocolMap[rule.Protocol],
 	}
+
+	iface, _ := net.InterfaceByName(rule.Interface)
 	if iface != nil {
 		ret.Interface = int32(iface.Index)
 	}
@@ -282,39 +282,58 @@ func (w *Wall) parseRule(rule *Rule) (xdpwall.FilterRule, error) {
 		return ret, err
 	}
 
-	// ip set
-	ret.MatchExt.Set.Id = w.genIPSetID(rule.MatchExtension.Set.Name)
-	ret.MatchExt.Set.Direction = xdpIpSetTypeMap[rule.MatchExtension.Set.Direction]
+	ext := rule.MatchExtension
+	if ext != nil {
+		ret.MatchExt.Enable = 1
 
-	// udp
-	ret.MatchExt.Udp.Sport = uint16(rule.MatchExtension.UDP.SrcPort)
-	ret.MatchExt.Udp.Dport = uint16(rule.MatchExtension.UDP.DstPort)
-
-	// tcp
-	ret.MatchExt.Tcp.Sport = uint16(rule.MatchExtension.TCP.SrcPort)
-	ret.MatchExt.Tcp.Dport = uint16(rule.MatchExtension.TCP.DstPort)
-
-	// multi ports
-	if rule.MatchExtension.MultiPort.Src != "" {
-		ports := strings.Split(rule.MatchExtension.MultiPort.Src, ",")
-		for i, p := range ports {
-			port, maxPort, err := w.parseMultiPort(p)
-			if err != nil {
-				return ret, err
-			}
-			ret.MatchExt.MultiPort.Src[i].Port = port
-			ret.MatchExt.MultiPort.Src[i].Max = maxPort
+		// ip set
+		if ext.Set != nil {
+			ret.MatchExt.Set.Enable = 1
+			ret.MatchExt.Set.Id = w.genIPSetID(ext.Set.Name)
+			ret.MatchExt.Set.Direction = xdpIpSetTypeMap[ext.Set.Direction]
 		}
-	}
-	if rule.MatchExtension.MultiPort.Dst != "" {
-		ports := strings.Split(rule.MatchExtension.MultiPort.Dst, ",")
-		for i, p := range ports {
-			port, maxPort, err := w.parseMultiPort(p)
-			if err != nil {
-				return ret, err
+
+		// udp
+		if ext.UDP != nil {
+			ret.MatchExt.Udp.Enable = 1
+			ret.MatchExt.Udp.Sport = uint16(ext.UDP.SrcPort)
+			ret.MatchExt.Udp.Dport = uint16(ext.UDP.DstPort)
+		}
+
+		// tcp
+		if ext.TCP != nil {
+			ret.MatchExt.Tcp.Enable = 1
+			ret.MatchExt.Tcp.Sport = uint16(ext.TCP.SrcPort)
+			ret.MatchExt.Tcp.Dport = uint16(ext.TCP.DstPort)
+		}
+
+		if ext.MultiPort != nil {
+			ret.MatchExt.MultiPort.Enable = 1
+			// multi ports
+			if ext.MultiPort.Src != "" {
+				ports := strings.Split(ext.MultiPort.Src, ",")
+				for i, p := range ports {
+					port, maxPort, err := w.parseMultiPort(p)
+					if err != nil {
+						return ret, err
+					}
+					ret.MatchExt.MultiPort.Src[i].Port = port
+					ret.MatchExt.MultiPort.Src[i].Max = maxPort
+					ret.MatchExt.MultiPort.SrcSize++
+				}
 			}
-			ret.MatchExt.MultiPort.Dst[i].Port = port
-			ret.MatchExt.MultiPort.Dst[i].Max = maxPort
+			if ext.MultiPort.Dst != "" {
+				ports := strings.Split(ext.MultiPort.Dst, ",")
+				for i, p := range ports {
+					port, maxPort, err := w.parseMultiPort(p)
+					if err != nil {
+						return ret, err
+					}
+					ret.MatchExt.MultiPort.Dst[i].Port = port
+					ret.MatchExt.MultiPort.Dst[i].Max = maxPort
+					ret.MatchExt.MultiPort.DstSize++
+				}
+			}
 		}
 	}
 

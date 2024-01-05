@@ -13,7 +13,8 @@ import (
 )
 
 type FilterIpItem struct {
-	Enable int32
+	Enable int16
+	_      [2]byte
 	Addr   uint32
 	Mask   uint32
 }
@@ -41,7 +42,8 @@ const (
 )
 
 type FilterRule struct {
-	Enable          int32
+	Enable          int16
+	_               [2]byte
 	Interface       int32
 	Target          FilterTarget
 	Protocol        FilterProtocol
@@ -50,20 +52,30 @@ type FilterRule struct {
 	Destination     uint32
 	DestinationMask uint32
 	MatchExt        struct {
-		Set struct {
+		Enable int16
+		_      [2]byte
+		Set    struct {
+			Enable    int16
+			_         [2]byte
 			Id        uint32
 			Direction FilterIpSetDirection
 		}
 		Udp struct {
-			Sport uint16
-			Dport uint16
+			Enable int16
+			Sport  uint16
+			Dport  uint16
 		}
 		Tcp struct {
-			Sport uint16
-			Dport uint16
+			Enable int16
+			Sport  uint16
+			Dport  uint16
 		}
 		MultiPort struct {
-			Src [10]struct {
+			Enable  int16
+			_       [2]byte
+			SrcSize int32
+			DstSize int32
+			Src     [10]struct {
 				Port uint16
 				Max  uint16
 			}

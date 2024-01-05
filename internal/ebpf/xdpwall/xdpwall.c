@@ -31,9 +31,9 @@ enum ip_set_direction {
 };
 
 struct ip_item {
-    int enable;
-    __u32 addr;
-    __u32 mask;
+    s16 enable;
+    u32 addr;
+    u32 mask;
 };
 
 struct {
@@ -44,17 +44,20 @@ struct {
 } ip_set_map SEC(".maps");
 
 struct set_ext {
+    s16 enable;
     u32 id;
     enum ip_set_direction direction;
 };
 
 // example: -p udp --dport 8080
 struct udp_ext {
+    s16 enable;
     u16 sport;
     u16 dport;
 };
 
 struct tcp_ext {
+    s16 enable;
     u16 sport;
     u16 dport;
 };
@@ -65,12 +68,16 @@ struct ip_pair {
 };
 
 struct multi_port_ext {
+    s16 enable;
+    int src_size;
+    int dst_size;
     struct ip_pair src[10];
     struct ip_pair dst[10];
 };
 
 // example: -m comment --comment "foo"
 struct match_ext {
+    s16 enable;
     struct set_ext set;
     struct udp_ext udp;
     struct tcp_ext tcp;
@@ -81,7 +88,7 @@ struct target_ext {};
 
 // common rule
 struct rule {
-    int enable;
+    s16 enable;
     int interface;
     enum target target;
     enum protocol protocol;
@@ -138,7 +145,7 @@ static int __always_inline match_protocol(__u32 pkt_prot, __u32 rule_prot) {
 }
 
 static int __always_inline match_ip(__u32 pktip, __u32 ruleip, __u32 ruleip_mask) {
-    // all address
+    // all address (0.0.0.0)
     if (!ruleip) { 
         return 1;
     }
@@ -151,34 +158,23 @@ static int __always_inline match_ip(__u32 pktip, __u32 ruleip, __u32 ruleip_mask
     return pktip == ruleip;
 }
 
-static int __always_inline match_udp(struct udphdr *udp, struct rule *rule) {
-    struct udp_ext udpext = rule->match_ext.udp;
-    if (udpext.sport && bpf_htons(udp->source) != udpext.sport) {
-        return 0;
-    }
-    if (udpext.dport && bpf_htons(udp->dest) != udpext.dport) {
-        return 0;
-    }
+static int __always_inline match_udp(struct udphdr *udp, struct udp_ext *ext) {
+    // `port == 0` means that port is not set
+    int hits = !ext->sport || bpf_htons(udp->source) == ext->sport;
+    int hitd = !ext->dport || bpf_htons(udp->dest) == ext->dport;
 
-    return 1;
+    return hits && hitd;
 }
 
-static int __always_inline match_tcp(struct tcphdr *tcp, struct rule *rule) {
-    struct tcp_ext tcpext = rule->match_ext.tcp;
-    if (tcpext.sport && bpf_htons(tcp->source) != tcpext.sport) {
-        return 0;
-    }
-    if (tcpext.dport && bpf_htons(tcp->dest) != tcpext.dport) {
-        return 0;
-    }
+static int __always_inline match_tcp(struct tcphdr *tcp, struct tcp_ext *ext) {
+    // `port == 0` means that port is not set
+    int hits = !ext->sport || bpf_htons(tcp->source) == ext->sport;
+    int hitd = !ext->dport || bpf_htons(tcp->dest) == ext->dport;
 
-    return 1;
+    return hits && hitd;
 }
 
 static int __always_inline match_set(struct iphdr *ip, struct set_ext setext) {
-    // not set
-    if (!setext.id) return 1;
-
     struct ip_item *val = bpf_map_lookup_elem(&ip_set_map, &setext.id);
     if (!val) {
         return 0;
@@ -212,7 +208,8 @@ static int __always_inline match_set(struct iphdr *ip, struct set_ext setext) {
 }
 
 static int __always_inline match_multi_port(u16 sport, u16 dport, struct multi_port_ext ext) {
-    return 0;
+    __bpf_printk("sport: %u, dport: %u", sport, dport);
+    return 1;
 }
 
 static __u64 traverse_rules(void *map, __u32 *key, struct rule *rule, struct cbstack *ctx) {
@@ -237,40 +234,55 @@ static __u64 traverse_rules(void *map, __u32 *key, struct rule *rule, struct cbs
         return 0;
     }
 
-    int hitprot;
-    u16 sport, dport;
+    // hit the basic rule here
+    ctx->hit = 1;
+    if (!rule->match_ext.enable) {    
+        ctx->action = rule->target;
+        return 1;
+    }
+
+    // match extensions
+    struct match_ext ext = rule->match_ext;
+    // ip set
+    if (ext.set.enable && !(ctx->hit = match_set(ctx->ip, ext.set))) {
+        return 0;
+    }
+
+    int sport, dport;
+    // match protocol
     switch (rule->protocol) {
         case IPPROTO_ICMP:
             // TODO
-            hitprot = 1;
             break;
         case IPPROTO_UDP:
             if (ctx->udp) {
-                sport = ctx->udp->source;
-                dport = ctx->udp->dest;
-                hitprot = match_udp(ctx->udp, rule);
+                if (ext.udp.enable && !(ctx->hit = match_udp(ctx->udp, &ext.udp))) {
+                    return 0;
+                }
+                sport = bpf_htons(ctx->udp->source);
+                dport = bpf_htons(ctx->udp->dest);
             }
             break;
         case IPPROTO_TCP:
             if (ctx->tcp) {
-                sport = ctx->tcp->source;
-                dport = ctx->tcp->dest;
-                hitprot = match_tcp(ctx->tcp, rule);
+                if (ext.tcp.enable && !(ctx->hit = match_tcp(ctx->tcp, &ext.tcp))) {
+                    return 0;
+                }
+                sport = bpf_htons(ctx->tcp->source);
+                dport = bpf_htons(ctx->tcp->dest);
             }
             break;
         default:
             // support empty rule
-            hitprot = 1;
             break;
     }
 
-    if (hitprot) {
-        // matched the basic rule, now enter the extension
-        if (!match_set(ctx->ip, rule->match_ext.set)) return 0;
-        if (!match_multi_port(sport, dport, rule->match_ext.multi_port)) return 0;
+    if (ext.multi_port.enable && !(ctx->hit = match_multi_port(sport, dport, ext.multi_port))) {
+        return 0;
+    }
 
+    if (ctx->hit) {
         ctx->action = rule->target;
-        ctx->hit = 1;
         return 1;
     }
 
@@ -286,6 +298,7 @@ int xdp_wall_func(struct xdp_md *ctx) {
         .index = 0,
         .raw = ctx,
         .action = ACCEPT,
+        .hit = 0,
     };
 
     struct ethhdr *eth; 
