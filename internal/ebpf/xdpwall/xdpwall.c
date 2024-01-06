@@ -8,6 +8,7 @@ char __license[] SEC("license") = "Dual MIT/GPL";
 #define MAX_IPS 200
 #define MAX_IPSET 1024
 #define MAX_RULES 4096
+#define MAX_PORT_PAIRS 10
 
 enum target {
     ABORTED = XDP_ABORTED,
@@ -62,17 +63,19 @@ struct tcp_ext {
     u16 dport;
 };
 
-struct ip_pair {
+struct port_pair {
     u16 port;
     u16 max;
 };
 
-struct multi_port_ext {
+struct multi_port_pairs {
     s16 enable;
-    int src_size;
-    int dst_size;
-    struct ip_pair src[10];
-    struct ip_pair dst[10];
+    struct port_pair data[MAX_PORT_PAIRS];
+};
+
+struct multi_port_ext {
+    struct multi_port_pairs src;
+    struct multi_port_pairs dst;
 };
 
 // example: -m comment --comment "foo"
@@ -133,10 +136,10 @@ struct cbstack {
     struct udphdr *udp;
     struct tcphdr *tcp;
     enum target action;
-    int hit;
+    __s16 hit;
 };
 
-static int __always_inline match_protocol(__u32 pkt_prot, __u32 rule_prot) {
+static __s16 __always_inline match_protocol(__u32 pkt_prot, __u32 rule_prot) {
     // all protocol
     if (!rule_prot) {
         return 1;
@@ -144,7 +147,7 @@ static int __always_inline match_protocol(__u32 pkt_prot, __u32 rule_prot) {
     return pkt_prot == rule_prot;
 }
 
-static int __always_inline match_ip(__u32 pktip, __u32 ruleip, __u32 ruleip_mask) {
+static __s16 __always_inline match_ip(__u32 pktip, __u32 ruleip, __u32 ruleip_mask) {
     // all address (0.0.0.0)
     if (!ruleip) { 
         return 1;
@@ -158,7 +161,7 @@ static int __always_inline match_ip(__u32 pktip, __u32 ruleip, __u32 ruleip_mask
     return pktip == ruleip;
 }
 
-static int __always_inline match_udp(struct udphdr *udp, struct udp_ext *ext) {
+static __s16 __always_inline match_udp(struct udphdr *udp, struct udp_ext *ext) {
     // `port == 0` means that port is not set
     int hits = !ext->sport || bpf_htons(udp->source) == ext->sport;
     int hitd = !ext->dport || bpf_htons(udp->dest) == ext->dport;
@@ -166,7 +169,7 @@ static int __always_inline match_udp(struct udphdr *udp, struct udp_ext *ext) {
     return hits && hitd;
 }
 
-static int __always_inline match_tcp(struct tcphdr *tcp, struct tcp_ext *ext) {
+static __s16 __always_inline match_tcp(struct tcphdr *tcp, struct tcp_ext *ext) {
     // `port == 0` means that port is not set
     int hits = !ext->sport || bpf_htons(tcp->source) == ext->sport;
     int hitd = !ext->dport || bpf_htons(tcp->dest) == ext->dport;
@@ -174,7 +177,7 @@ static int __always_inline match_tcp(struct tcphdr *tcp, struct tcp_ext *ext) {
     return hits && hitd;
 }
 
-static int __always_inline match_set(struct iphdr *ip, struct set_ext setext) {
+static __s16 __always_inline match_set(struct iphdr *ip, struct set_ext setext) {
     struct ip_item *val = bpf_map_lookup_elem(&ip_set_map, &setext.id);
     if (!val) {
         return 0;
@@ -207,9 +210,22 @@ static int __always_inline match_set(struct iphdr *ip, struct set_ext setext) {
     return 0;
 }
 
-static int __always_inline match_multi_port(u16 sport, u16 dport, struct multi_port_ext ext) {
-    __bpf_printk("sport: %u, dport: %u", sport, dport);
-    return 1;
+static __s16 __always_inline match_multi_port(u16 port, struct multi_port_pairs *pairs) {
+    __s16 hit = 0;
+    for (int i = 0; i < MAX_PORT_PAIRS; i++) {
+        struct port_pair pair = pairs->data[i];
+        if (!pair.port) {
+            break;
+        }
+
+        // if `max` is not zero, then this pair is a port range
+        hit = pair.max ? (port >= pair.port && port <= pair.max) : (port == pair.port);
+        if (hit) {
+            break;
+        }
+    }
+    
+    return hit;
 }
 
 static __u64 traverse_rules(void *map, __u32 *key, struct rule *rule, struct cbstack *ctx) {
@@ -248,7 +264,6 @@ static __u64 traverse_rules(void *map, __u32 *key, struct rule *rule, struct cbs
         return 0;
     }
 
-    int sport, dport;
     // match protocol
     switch (rule->protocol) {
         case IPPROTO_ICMP:
@@ -256,29 +271,21 @@ static __u64 traverse_rules(void *map, __u32 *key, struct rule *rule, struct cbs
             break;
         case IPPROTO_UDP:
             if (ctx->udp) {
-                if (ext.udp.enable && !(ctx->hit = match_udp(ctx->udp, &ext.udp))) {
-                    return 0;
-                }
-                sport = bpf_htons(ctx->udp->source);
-                dport = bpf_htons(ctx->udp->dest);
+                if (ext.udp.enable && !(ctx->hit = match_udp(ctx->udp, &ext.udp))) return 0;
+                if (ext.multi_port.src.enable && !(ctx->hit = match_multi_port(bpf_htons(ctx->udp->source), &ext.multi_port.src))) return 0;
+                if (ext.multi_port.dst.enable && !(ctx->hit = match_multi_port(bpf_htons(ctx->udp->dest), &ext.multi_port.dst))) return 0;
             }
             break;
         case IPPROTO_TCP:
             if (ctx->tcp) {
-                if (ext.tcp.enable && !(ctx->hit = match_tcp(ctx->tcp, &ext.tcp))) {
-                    return 0;
-                }
-                sport = bpf_htons(ctx->tcp->source);
-                dport = bpf_htons(ctx->tcp->dest);
+                if (ext.tcp.enable && !(ctx->hit = match_tcp(ctx->tcp, &ext.tcp))) return 0;
+                if (ext.multi_port.src.enable && !(ctx->hit = match_multi_port(bpf_htons(ctx->tcp->source), &ext.multi_port.src))) return 0;
+                if (ext.multi_port.dst.enable && !(ctx->hit = match_multi_port(bpf_htons(ctx->tcp->dest), &ext.multi_port.dst))) return 0;
             }
             break;
         default:
             // support empty rule
             break;
-    }
-
-    if (ext.multi_port.enable && !(ctx->hit = match_multi_port(sport, dport, ext.multi_port))) {
-        return 0;
     }
 
     if (ctx->hit) {

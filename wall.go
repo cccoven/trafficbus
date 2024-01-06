@@ -308,30 +308,29 @@ func (w *Wall) parseRule(rule *Rule) (xdpwall.FilterRule, error) {
 		}
 
 		if ext.MultiPort != nil {
-			ret.MatchExt.MultiPort.Enable = 1
 			// multi ports
 			if ext.MultiPort.Src != "" {
+				ret.MatchExt.MultiPort.Src.Enable = 1
 				ports := strings.Split(ext.MultiPort.Src, ",")
 				for i, p := range ports {
 					port, maxPort, err := w.parseMultiPort(p)
 					if err != nil {
 						return ret, err
 					}
-					ret.MatchExt.MultiPort.Src[i].Port = port
-					ret.MatchExt.MultiPort.Src[i].Max = maxPort
-					ret.MatchExt.MultiPort.SrcSize++
+					ret.MatchExt.MultiPort.Src.Data[i].Port = port
+					ret.MatchExt.MultiPort.Src.Data[i].Max = maxPort
 				}
 			}
 			if ext.MultiPort.Dst != "" {
+				ret.MatchExt.MultiPort.Dst.Enable = 1
 				ports := strings.Split(ext.MultiPort.Dst, ",")
 				for i, p := range ports {
 					port, maxPort, err := w.parseMultiPort(p)
 					if err != nil {
 						return ret, err
 					}
-					ret.MatchExt.MultiPort.Dst[i].Port = port
-					ret.MatchExt.MultiPort.Dst[i].Max = maxPort
-					ret.MatchExt.MultiPort.DstSize++
+					ret.MatchExt.MultiPort.Dst.Data[i].Port = port
+					ret.MatchExt.MultiPort.Dst.Data[i].Max = maxPort
 				}
 			}
 		}

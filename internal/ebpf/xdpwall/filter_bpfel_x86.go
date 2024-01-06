@@ -71,17 +71,19 @@ type FilterRule struct {
 			Dport  uint16
 		}
 		MultiPort struct {
-			Enable  int16
-			_       [2]byte
-			SrcSize int32
-			DstSize int32
-			Src     [10]struct {
-				Port uint16
-				Max  uint16
+			Src struct {
+				Enable int16
+				Data   [10]struct {
+					Port uint16
+					Max  uint16
+				}
 			}
-			Dst [10]struct {
-				Port uint16
-				Max  uint16
+			Dst struct {
+				Enable int16
+				Data   [10]struct {
+					Port uint16
+					Max  uint16
+				}
 			}
 		}
 	}
