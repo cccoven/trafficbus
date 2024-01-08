@@ -13,7 +13,7 @@ import (
 	"github.com/cilium/ebpf/rlimit"
 )
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -type ip_set_direction -type ip_item -type match_event -target amd64 Filter xdpwall.c -- -I../include
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -type ip_set_direction -type tcp_flag -type ip_item -type match_event -target amd64 Filter xdpwall.c -- -I../include
 
 type IPSet [200]FilterIpItem
 

@@ -62,13 +62,21 @@ type FilterRule struct {
 		}
 		Udp struct {
 			Enable int16
-			Sport  uint16
-			Dport  uint16
+			Src    uint16
+			Dst    uint16
 		}
+		_   [2]byte
 		Tcp struct {
 			Enable int16
-			Sport  uint16
-			Dport  uint16
+			Src    uint16
+			Dst    uint16
+			_      [2]byte
+			Flags  struct {
+				Mask int32
+				Comp int32
+			}
+			Syn uint16
+			_   [2]byte
 		}
 		MultiPort struct {
 			Src struct {
@@ -99,6 +107,17 @@ const (
 	FilterTargetTX      FilterTarget = 3
 	FilterTargetFORWARD FilterTarget = 4
 	FilterTargetLOG     FilterTarget = 5
+)
+
+type FilterTcpFlag uint32
+
+const (
+	FilterTcpFlagSYN FilterTcpFlag = 1
+	FilterTcpFlagACK FilterTcpFlag = 2
+	FilterTcpFlagPSH FilterTcpFlag = 4
+	FilterTcpFlagURG FilterTcpFlag = 8
+	FilterTcpFlagFIN FilterTcpFlag = 16
+	FilterTcpFlagRST FilterTcpFlag = 32
 )
 
 // LoadFilter returns the embedded CollectionSpec for Filter.

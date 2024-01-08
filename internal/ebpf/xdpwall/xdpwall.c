@@ -31,6 +31,15 @@ enum ip_set_direction {
     BOTH,
 };
 
+enum tcp_flag {
+    SYN = (1 << 0),
+    ACK = (1 << 1),
+    PSH = (1 << 2),
+    URG = (1 << 3),
+    FIN = (1 << 4),
+    RST = (1 << 5),
+};
+
 struct ip_item {
     s16 enable;
     u32 addr;
@@ -53,14 +62,21 @@ struct set_ext {
 // example: -p udp --dport 8080
 struct udp_ext {
     s16 enable;
-    u16 sport;
-    u16 dport;
+    u16 src;
+    u16 dst;
+};
+
+struct tcp_flags {
+    int mask;
+    int comp;
 };
 
 struct tcp_ext {
     s16 enable;
-    u16 sport;
-    u16 dport;
+    u16 src;
+    u16 dst;
+    struct tcp_flags flags;
+    u16 syn;
 };
 
 struct port_pair {
@@ -125,6 +141,7 @@ struct {
 const enum target *target_t __attribute__((unused));
 const enum protocol *protocol_t __attribute__((unused));
 const enum ip_set_direction *ip_set_directrion_t __attribute__((unused));
+const enum tcp_flag *tcp_flag_t __attribute__((unused));
 const struct ip_item *ip_item_t __attribute__((unused));
 const struct match_event *match_event_t __attribute__((unused));
 
@@ -163,18 +180,35 @@ static __s16 __always_inline match_ip(__u32 pktip, __u32 ruleip, __u32 ruleip_ma
 
 static __s16 __always_inline match_udp(struct udphdr *udp, struct udp_ext *ext) {
     // `port == 0` means that port is not set
-    int hits = !ext->sport || bpf_htons(udp->source) == ext->sport;
-    int hitd = !ext->dport || bpf_htons(udp->dest) == ext->dport;
-
-    return hits && hitd;
+    if (ext->src && bpf_htons(udp->source) != ext->src) {
+        return 0;
+    }
+    if (ext->dst && bpf_htons(udp->dest) != ext->dst) {
+        return 0;
+    }
+    
+    return 1;
 }
 
 static __s16 __always_inline match_tcp(struct tcphdr *tcp, struct tcp_ext *ext) {
     // `port == 0` means that port is not set
-    int hits = !ext->sport || bpf_htons(tcp->source) == ext->sport;
-    int hitd = !ext->dport || bpf_htons(tcp->dest) == ext->dport;
+    if (ext->src && bpf_htons(tcp->source) != ext->src) {
+        return 0;
+    }
+    if (ext->dst && bpf_htons(tcp->dest) != ext->dst) {
+        return 0;
+    }
 
-    return hits && hitd;
+    if (ext->flags.mask && ext->flags.comp) {
+        __bpf_printk("FIN flag is set: %d", (ext->flags.comp & FIN) != 0);
+        __bpf_printk("SYN flag is set: %d", (ext->flags.comp & SYN) != 0);
+        __bpf_printk("RST flag is set: %d", (ext->flags.comp & RST) != 0);
+        __bpf_printk("PSH flag is set: %d", (ext->flags.comp & PSH) != 0);
+        __bpf_printk("ACK flag is set: %d", (ext->flags.comp & ACK) != 0);
+        __bpf_printk("URG flag is set: %d", (ext->flags.comp & URG) != 0);
+    }
+
+    return 1;
 }
 
 static __s16 __always_inline match_set(struct iphdr *ip, struct set_ext setext) {
@@ -236,8 +270,6 @@ static __u64 traverse_rules(void *map, __u32 *key, struct rule *rule, struct cbs
     if (rule->interface && rule->interface != ctx->raw->ingress_ifindex) {
         return 0;
     }
-
-    // __bpf_printk("index: %d, prot: %d", ctx->index, rule->protocol);
 
     if (!match_protocol(ctx->ip->protocol, rule->protocol)) {
         return 0;

@@ -36,6 +36,15 @@ var (
 		"DST":  xdpwall.FilterIpSetDirectionDST,
 		"BOTH": xdpwall.FilterIpSetDirectionBOTH,
 	}
+
+	xdpTCPFlagMap = map[string]xdpwall.FilterTcpFlag{
+		"SYN": xdpwall.FilterTcpFlagSYN,
+		"ACK": xdpwall.FilterTcpFlagACK,
+		"PSH": xdpwall.FilterTcpFlagPSH,
+		"URG": xdpwall.FilterTcpFlagURG,
+		"FIN": xdpwall.FilterTcpFlagFIN,
+		"RST": xdpwall.FilterTcpFlagRST,
+	}
 )
 
 type IPSet struct {
@@ -49,13 +58,20 @@ type SetExtension struct {
 }
 
 type UDPExtension struct {
-	SrcPort int `json:"srcPort" yaml:"srcPort"`
-	DstPort int `json:"dstPort" yaml:"dstPort"`
+	Src int `json:"src" yaml:"src"`
+	Dst int `json:"dst" yaml:"dst"`
+}
+
+type TCPFlags struct {
+	Mask string `json:"mask" yaml:"mask"`
+	Comp string `json:"comp" yaml:"comp"`
 }
 
 type TCPExtension struct {
-	SrcPort int `json:"srcPort" yaml:"srcPort"`
-	DstPort int `json:"dstPort" yaml:"dstPort"`
+	Src   int       `json:"src" yaml:"src"`
+	Dst   int       `json:"dst" yaml:"dst"`
+	Flags *TCPFlags `json:"flags" yaml:"flags"`
+	Syn   int       `json:"syn" yaml:"syn"`
 }
 
 type MultiPortExtension struct {
@@ -296,15 +312,37 @@ func (w *Wall) parseRule(rule *Rule) (xdpwall.FilterRule, error) {
 		// udp
 		if ext.UDP != nil {
 			ret.MatchExt.Udp.Enable = 1
-			ret.MatchExt.Udp.Sport = uint16(ext.UDP.SrcPort)
-			ret.MatchExt.Udp.Dport = uint16(ext.UDP.DstPort)
+			ret.MatchExt.Udp.Src = uint16(ext.UDP.Src)
+			ret.MatchExt.Udp.Dst = uint16(ext.UDP.Src)
 		}
 
 		// tcp
 		if ext.TCP != nil {
 			ret.MatchExt.Tcp.Enable = 1
-			ret.MatchExt.Tcp.Sport = uint16(ext.TCP.SrcPort)
-			ret.MatchExt.Tcp.Dport = uint16(ext.TCP.DstPort)
+			ret.MatchExt.Tcp.Src = uint16(ext.TCP.Src)
+			ret.MatchExt.Tcp.Dst = uint16(ext.TCP.Dst)
+			if ext.TCP.Flags != nil {
+				if ext.TCP.Flags.Mask != "" {
+					for _, f := range strings.Split(ext.TCP.Flags.Mask, ",") {
+						tcpFlag, ok := xdpTCPFlagMap[f]
+						if !ok {
+							continue
+						}
+						ret.MatchExt.Tcp.Flags.Mask |= int32(tcpFlag)
+					}
+				}
+				if ext.TCP.Flags.Comp != "" {
+					for _, f := range strings.Split(ext.TCP.Flags.Comp, ",") {
+						tcpFlag, ok := xdpTCPFlagMap[f]
+						if !ok {
+							continue
+						}
+						ret.MatchExt.Tcp.Flags.Comp |= int32(tcpFlag)
+					}
+				}
+			}
+
+			ret.MatchExt.Tcp.Syn = uint16(ext.TCP.Syn)
 		}
 
 		if ext.MultiPort != nil {
