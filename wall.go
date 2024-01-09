@@ -71,7 +71,7 @@ type TCPExtension struct {
 	Src   int       `json:"src" yaml:"src"`
 	Dst   int       `json:"dst" yaml:"dst"`
 	Flags *TCPFlags `json:"flags" yaml:"flags"`
-	Syn   int       `json:"syn" yaml:"syn"`
+	Syn   bool      `json:"syn" yaml:"syn"`
 }
 
 type MultiPortExtension struct {
@@ -321,6 +321,12 @@ func (w *Wall) parseRule(rule *Rule) (xdpwall.FilterRule, error) {
 			ret.MatchExt.Tcp.Enable = 1
 			ret.MatchExt.Tcp.Src = uint16(ext.TCP.Src)
 			ret.MatchExt.Tcp.Dst = uint16(ext.TCP.Dst)
+			if ext.TCP.Syn {
+				ext.TCP.Flags = &TCPFlags{
+					Mask: "SYN,ACK,PSH,URG,FIN,RST",
+					Comp: "SYN",
+				}
+			}
 			if ext.TCP.Flags != nil {
 				if ext.TCP.Flags.Mask != "" {
 					for _, f := range strings.Split(ext.TCP.Flags.Mask, ",") {
@@ -341,8 +347,6 @@ func (w *Wall) parseRule(rule *Rule) (xdpwall.FilterRule, error) {
 					}
 				}
 			}
-
-			ret.MatchExt.Tcp.Syn = uint16(ext.TCP.Syn)
 		}
 
 		if ext.MultiPort != nil {

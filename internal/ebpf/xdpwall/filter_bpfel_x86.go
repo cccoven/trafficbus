@@ -75,8 +75,6 @@ type FilterRule struct {
 				Mask int32
 				Comp int32
 			}
-			Syn uint16
-			_   [2]byte
 		}
 		MultiPort struct {
 			Src struct {

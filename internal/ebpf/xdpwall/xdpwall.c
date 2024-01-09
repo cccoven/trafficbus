@@ -76,7 +76,6 @@ struct tcp_ext {
     u16 src;
     u16 dst;
     struct tcp_flags flags;
-    u16 syn;
 };
 
 struct port_pair {
@@ -200,12 +199,52 @@ static __s16 __always_inline match_tcp(struct tcphdr *tcp, struct tcp_ext *ext) 
     }
 
     if (ext->flags.mask && ext->flags.comp) {
-        __bpf_printk("FIN flag is set: %d", (ext->flags.comp & FIN) != 0);
-        __bpf_printk("SYN flag is set: %d", (ext->flags.comp & SYN) != 0);
-        __bpf_printk("RST flag is set: %d", (ext->flags.comp & RST) != 0);
-        __bpf_printk("PSH flag is set: %d", (ext->flags.comp & PSH) != 0);
-        __bpf_printk("ACK flag is set: %d", (ext->flags.comp & ACK) != 0);
-        __bpf_printk("URG flag is set: %d", (ext->flags.comp & URG) != 0);
+        int intersection = ext->flags.mask & ext->flags.comp;
+        int difference = ext->flags.mask & (~intersection);
+
+        __bpf_printk("SYN flag: %u", tcp->syn);
+        __bpf_printk("ACK flag: %u", tcp->ack);
+        __bpf_printk("PSH flag: %u", tcp->psh);
+        __bpf_printk("URG flag: %u", tcp->urg);
+        __bpf_printk("FIN flag: %u", tcp->fin);
+        __bpf_printk("RST flag: %u", tcp->rst);
+
+        // make sure flags in the intersection are 1
+        // if ((intersection & SYN) && !tcp->syn) return 0;
+        // if ((intersection & ACK) && !tcp->ack) return 0;
+        // if ((intersection & PSH) && !tcp->psh) return 0;
+        // if ((intersection & URG) && !tcp->urg) return 0;
+        // if ((intersection & FIN) && !tcp->fin) return 0;
+        // if ((intersection & RST) && !tcp->rst) return 0;
+
+        // make sure flags in the difference are 0
+        // if ((difference & SYN) && tcp->syn) return 0;
+        // if ((difference & ACK) && tcp->ack) return 0;
+        // if ((difference & PSH) && tcp->psh) return 0;
+        // if ((difference & URG) && tcp->urg) return 0;
+        // if ((difference & FIN) && tcp->fin) return 0;
+        // if ((difference & RST) && tcp->rst) return 0;
+
+        int flags[6] = {SYN, ACK, PSH, URG, FIN, RST};
+        __u16 pkt_flags[6] = {tcp->syn, tcp->ack, tcp->psh, tcp->urg, tcp->fin, tcp->rst};
+
+        for (int i = 0; i < 6; i++) {
+            // this flag must be in the mask.
+            // constraints should be made in userspace.
+            if (!(flags[i] & ext->flags.mask)) {
+                return 0;
+            }
+
+            // make sure this comp flag is 1
+            int comp = (intersection & flags[i]) && !pkt_flags[i];
+            // make sure this mask flag is 0
+            int mask = (difference & flags[i]) && pkt_flags[i];
+            if (comp || mask) {
+                return 0;
+            }
+        }
+        __bpf_printk("comp flags are all 1");
+        __bpf_printk("mask flags are all 0");
     }
 
     return 1;
