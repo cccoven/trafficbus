@@ -2,6 +2,7 @@
 
 #include "bpf_endian.h"
 #include "common.h"
+#include "token_bucket.h"
 
 char __license[] SEC("license") = "Dual MIT/GPL";
 
@@ -202,29 +203,6 @@ static __s16 __always_inline match_tcp(struct tcphdr *tcp, struct tcp_ext *ext) 
         int intersection = ext->flags.mask & ext->flags.comp;
         int difference = ext->flags.mask & (~intersection);
 
-        __bpf_printk("SYN flag: %u", tcp->syn);
-        __bpf_printk("ACK flag: %u", tcp->ack);
-        __bpf_printk("PSH flag: %u", tcp->psh);
-        __bpf_printk("URG flag: %u", tcp->urg);
-        __bpf_printk("FIN flag: %u", tcp->fin);
-        __bpf_printk("RST flag: %u", tcp->rst);
-
-        // make sure flags in the intersection are 1
-        // if ((intersection & SYN) && !tcp->syn) return 0;
-        // if ((intersection & ACK) && !tcp->ack) return 0;
-        // if ((intersection & PSH) && !tcp->psh) return 0;
-        // if ((intersection & URG) && !tcp->urg) return 0;
-        // if ((intersection & FIN) && !tcp->fin) return 0;
-        // if ((intersection & RST) && !tcp->rst) return 0;
-
-        // make sure flags in the difference are 0
-        // if ((difference & SYN) && tcp->syn) return 0;
-        // if ((difference & ACK) && tcp->ack) return 0;
-        // if ((difference & PSH) && tcp->psh) return 0;
-        // if ((difference & URG) && tcp->urg) return 0;
-        // if ((difference & FIN) && tcp->fin) return 0;
-        // if ((difference & RST) && tcp->rst) return 0;
-
         int flags[6] = {SYN, ACK, PSH, URG, FIN, RST};
         __u16 pkt_flags[6] = {tcp->syn, tcp->ack, tcp->psh, tcp->urg, tcp->fin, tcp->rst};
 
@@ -243,8 +221,6 @@ static __s16 __always_inline match_tcp(struct tcphdr *tcp, struct tcp_ext *ext) 
                 return 0;
             }
         }
-        __bpf_printk("comp flags are all 1");
-        __bpf_printk("mask flags are all 0");
     }
 
     return 1;
@@ -338,7 +314,8 @@ static __u64 traverse_rules(void *map, __u32 *key, struct rule *rule, struct cbs
     // match protocol
     switch (rule->protocol) {
         case IPPROTO_ICMP:
-            // TODO
+            // TODO testing bpf_ktime_get_ns()
+            __bpf_printk("time: %u", bpf_ktime_get_ns() / 1000000000);
             break;
         case IPPROTO_UDP:
             if (ctx->udp) {
