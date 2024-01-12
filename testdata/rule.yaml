@@ -22,14 +22,15 @@ rules:
         #   comp: SYN
         syn: true
       # multiPort: 
-        # src: 8080,8081,8000:9000
-        # dst: 8080,8081,8000:9000
+      #   src: 8080,8081,8000:9000
+      #   dst: 8080,8081,8000:9000
   - interface: ""
     target: DROP
     protocol: ICMP
     source: ""
     destination: ""
     matchExtension:
+      limit: 5/second
       set:
         name: myset
         direction: SRC

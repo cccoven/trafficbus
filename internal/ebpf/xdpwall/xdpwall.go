@@ -13,9 +13,20 @@ import (
 	"github.com/cilium/ebpf/rlimit"
 )
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -type ip_set_direction -type tcp_flag -type ip_item -type match_event -target amd64 Filter xdpwall.c -- -I../include
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -type ip_set_direction -type tcp_flag -type ip_item -type match_ext -type set_ext -type udp_ext -type tcp_ext -type tcp_flags -type multi_port_ext -type multi_port_pairs -type port_pair -type match_event -type target_ext -target amd64 Filter xdpwall.c -- -I../include
 
 type IPSet [200]FilterIpItem
+
+func (s *IPSet) EnabledSize() int {
+	var size int
+	for _, item := range s {
+		if item.Enable == 0 {
+			continue
+		}
+		size++
+	}
+	return size
+}
 
 type XdpWall struct {
 	objs       FilterObjects
@@ -127,6 +138,11 @@ func (x *XdpWall) UpdateRule(key uint32, value FilterRule) error {
 
 func (x *XdpWall) UpdateRules(keys []uint32, values []FilterRule) (int, error) {
 	return x.objs.RuleMap.BatchUpdate(keys, values, nil)
+}
+
+// CreateBucket create a token bucket.
+func (x *XdpWall) CreateBucket(key uint32, value FilterBucket) error {
+	return x.objs.BucketMap.Put(key, value)
 }
 
 func (x *XdpWall) ReadMatchEvent() (FilterMatchEvent, error) {

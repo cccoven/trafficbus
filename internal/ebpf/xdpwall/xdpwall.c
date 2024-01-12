@@ -2,7 +2,6 @@
 
 #include "bpf_endian.h"
 #include "common.h"
-#include "token_bucket.h"
 
 char __license[] SEC("license") = "Dual MIT/GPL";
 
@@ -143,7 +142,16 @@ const enum protocol *protocol_t __attribute__((unused));
 const enum ip_set_direction *ip_set_directrion_t __attribute__((unused));
 const enum tcp_flag *tcp_flag_t __attribute__((unused));
 const struct ip_item *ip_item_t __attribute__((unused));
+const struct match_ext *match_ext_t __attribute__((unused));
+const struct set_ext *set_ext_t __attribute__((unused));
+const struct udp_ext *udp_ext_t __attribute__((unused));
+const struct tcp_ext *tcp_ext_t __attribute__((unused));
+const struct tcp_flags *tcp_flags_t __attribute__((unused));
+const struct multi_port_ext *multi_port_ext_t __attribute__((unused));
+const struct multi_port_pairs *multi_port_pairs_t __attribute__((unused));
+const struct port_pair *port_pair_t __attribute__((unused));
 const struct match_event *match_event_t __attribute__((unused));
+const struct target_ext *target_ext_t __attribute__((unused));
 
 struct cbstack {
     int index;
@@ -155,6 +163,71 @@ struct cbstack {
     enum target action;
     __s16 hit;
 };
+
+// token bucket
+struct bucket {
+    u64 start_moment;
+    u64 capacity;
+    u64 quantum;
+    u32 fill_interval;
+    u64 available_tokens;
+    u64 latest_tick;
+};
+
+static struct bucket tb_create(__u32 interval, __u64 capacity, __u64 quantum) {
+    struct bucket tb = {
+        .start_moment = bpf_ktime_get_ns(),
+        .capacity = capacity,
+        .latest_tick = 0,
+        .fill_interval = interval,
+        .quantum = quantum,
+        .available_tokens = capacity,
+    };
+    return tb;
+};
+
+// calculate how many token filling cycles have elapsed from the start time
+static __u64 tb_current_tick(struct bucket *tb) {
+    // seconds
+    // __u64 now = bpf_ktime_get_ns() / 1000000000;
+    return (bpf_ktime_get_ns() - tb->start_moment) / tb->fill_interval;
+}
+
+static void tb_adjust_available(struct bucket *tb, __u64 tick) {
+    __u64 latest_tick = tb->latest_tick;
+    tb->latest_tick = tick;
+    if (tb->available_tokens >= tb->capacity) {
+        return;
+    }
+    tb->available_tokens += (tick - latest_tick) * tb->quantum;
+    if (tb->available_tokens > tb->capacity) {
+        tb->available_tokens = tb->capacity;
+    }
+}
+
+static __u64 tb_take_available(struct bucket *tb, __u64 count) {
+    if (count <= 0) return 0;
+    tb_adjust_available(tb, tb_current_tick(tb));
+    if (tb->available_tokens <= 0) {
+        return 0;
+    }
+    if (count >= tb->available_tokens) {
+        count = tb->available_tokens;
+    }
+    tb->available_tokens -= count;
+    return count;
+}
+
+static __u64 tb_available(struct bucket *bucket) {
+    return 0;
+}
+
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, MAX_RULES);
+    __type(key, __u32);
+    __type(value, struct bucket);
+} bucket_map SEC(".maps");
 
 static __s16 __always_inline match_protocol(__u32 pkt_prot, __u32 rule_prot) {
     // all protocol
@@ -314,8 +387,6 @@ static __u64 traverse_rules(void *map, __u32 *key, struct rule *rule, struct cbs
     // match protocol
     switch (rule->protocol) {
         case IPPROTO_ICMP:
-            // TODO testing bpf_ktime_get_ns()
-            __bpf_printk("time: %u", bpf_ktime_get_ns() / 1000000000);
             break;
         case IPPROTO_UDP:
             if (ctx->udp) {

@@ -12,6 +12,16 @@ import (
 	"github.com/cilium/ebpf"
 )
 
+type FilterBucket struct {
+	StartMoment     uint64
+	Capacity        uint64
+	Quantum         uint64
+	FillInterval    uint32
+	_               [4]byte
+	AvailableTokens uint64
+	LatestTick      uint64
+}
+
 type FilterIpItem struct {
 	Enable int16
 	_      [2]byte
@@ -33,6 +43,31 @@ type FilterMatchEvent struct {
 	Bytes     uint64
 }
 
+type FilterMatchExt struct {
+	Enable    int16
+	_         [2]byte
+	Set       FilterSetExt
+	Udp       FilterUdpExt
+	_         [2]byte
+	Tcp       FilterTcpExt
+	MultiPort FilterMultiPortExt
+}
+
+type FilterMultiPortExt struct {
+	Src FilterMultiPortPairs
+	Dst FilterMultiPortPairs
+}
+
+type FilterMultiPortPairs struct {
+	Enable int16
+	Data   [10]FilterPortPair
+}
+
+type FilterPortPair struct {
+	Port uint16
+	Max  uint16
+}
+
 type FilterProtocol uint32
 
 const (
@@ -51,49 +86,15 @@ type FilterRule struct {
 	SourceMask      uint32
 	Destination     uint32
 	DestinationMask uint32
-	MatchExt        struct {
-		Enable int16
-		_      [2]byte
-		Set    struct {
-			Enable    int16
-			_         [2]byte
-			Id        uint32
-			Direction FilterIpSetDirection
-		}
-		Udp struct {
-			Enable int16
-			Src    uint16
-			Dst    uint16
-		}
-		_   [2]byte
-		Tcp struct {
-			Enable int16
-			Src    uint16
-			Dst    uint16
-			_      [2]byte
-			Flags  struct {
-				Mask int32
-				Comp int32
-			}
-		}
-		MultiPort struct {
-			Src struct {
-				Enable int16
-				Data   [10]struct {
-					Port uint16
-					Max  uint16
-				}
-			}
-			Dst struct {
-				Enable int16
-				Data   [10]struct {
-					Port uint16
-					Max  uint16
-				}
-			}
-		}
-	}
-	TargetExt struct{}
+	MatchExt        FilterMatchExt
+	TargetExt       FilterTargetExt
+}
+
+type FilterSetExt struct {
+	Enable    int16
+	_         [2]byte
+	Id        uint32
+	Direction FilterIpSetDirection
 }
 
 type FilterTarget uint32
@@ -107,6 +108,16 @@ const (
 	FilterTargetLOG     FilterTarget = 5
 )
 
+type FilterTargetExt struct{}
+
+type FilterTcpExt struct {
+	Enable int16
+	Src    uint16
+	Dst    uint16
+	_      [2]byte
+	Flags  FilterTcpFlags
+}
+
 type FilterTcpFlag uint32
 
 const (
@@ -117,6 +128,17 @@ const (
 	FilterTcpFlagFIN FilterTcpFlag = 16
 	FilterTcpFlagRST FilterTcpFlag = 32
 )
+
+type FilterTcpFlags struct {
+	Mask int32
+	Comp int32
+}
+
+type FilterUdpExt struct {
+	Enable int16
+	Src    uint16
+	Dst    uint16
+}
 
 // LoadFilter returns the embedded CollectionSpec for Filter.
 func LoadFilter() (*ebpf.CollectionSpec, error) {
@@ -166,6 +188,7 @@ type FilterProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type FilterMapSpecs struct {
+	BucketMap   *ebpf.MapSpec `ebpf:"bucket_map"`
 	IpSetMap    *ebpf.MapSpec `ebpf:"ip_set_map"`
 	MatchEvents *ebpf.MapSpec `ebpf:"match_events"`
 	RuleMap     *ebpf.MapSpec `ebpf:"rule_map"`
@@ -190,6 +213,7 @@ func (o *FilterObjects) Close() error {
 //
 // It can be passed to LoadFilterObjects or ebpf.CollectionSpec.LoadAndAssign.
 type FilterMaps struct {
+	BucketMap   *ebpf.Map `ebpf:"bucket_map"`
 	IpSetMap    *ebpf.Map `ebpf:"ip_set_map"`
 	MatchEvents *ebpf.Map `ebpf:"match_events"`
 	RuleMap     *ebpf.Map `ebpf:"rule_map"`
@@ -197,6 +221,7 @@ type FilterMaps struct {
 
 func (m *FilterMaps) Close() error {
 	return _FilterClose(
+		m.BucketMap,
 		m.IpSetMap,
 		m.MatchEvents,
 		m.RuleMap,

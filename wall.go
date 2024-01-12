@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/cccoven/trafficbus/internal"
 	"github.com/cccoven/trafficbus/internal/ebpf/xdpwall"
@@ -45,6 +46,8 @@ var (
 		"FIN": xdpwall.FilterTcpFlagFIN,
 		"RST": xdpwall.FilterTcpFlagRST,
 	}
+
+	tokenBucketLimit = map[string]time.Duration{}
 )
 
 type IPSet struct {
@@ -84,6 +87,7 @@ type MatchExtension struct {
 	UDP       *UDPExtension       `json:"udp,omitempty" yaml:"udp"`
 	TCP       *TCPExtension       `json:"tcp,omitempty" yaml:"tcp"`
 	MultiPort *MultiPortExtension `json:"multiPort" yaml:"multiPort"`
+	Limit     string              `json:"limit" yaml:"limit"`
 }
 
 type TargetExtension struct{}
@@ -106,12 +110,197 @@ type RuleFormat struct {
 	Rules  []*Rule  `json:"rules" yaml:"rules"`
 }
 
+// str2hash use uint32 hash as ipset name
+func str2hash(s string) uint32 {
+	if s == "" {
+		return 0
+	}
+	hasher := fnv.New32()
+	hasher.Write([]byte(s))
+	return hasher.Sum32()
+}
+
+type RuleParser struct{}
+
+func NewRuleParser() *RuleParser {
+	return &RuleParser{}
+}
+
+func (p *RuleParser) ParseIP(ip string) (xdpwall.FilterIpItem, error) {
+	var err error
+	item := xdpwall.FilterIpItem{
+		Enable: 1,
+	}
+	item.Addr, item.Mask, err = internal.ParseV4CIDRU32(ip)
+	if err != nil {
+		return item, err
+	}
+	return item, nil
+}
+
+func (p *RuleParser) ParseIPSet(dst *xdpwall.FilterSetExt, ori *SetExtension) {
+	if ori == nil {
+		return
+	}
+	dst.Enable = 1
+	dst.Id = str2hash(ori.Name)
+	dst.Direction = xdpIpSetTypeMap[ori.Direction]
+}
+
+func (p *RuleParser) ParseUDP(dst *xdpwall.FilterUdpExt, ori *UDPExtension) {
+	if ori == nil {
+		return
+	}
+	dst.Enable = 1
+	dst.Src = uint16(ori.Src)
+	dst.Dst = uint16(ori.Src)
+}
+
+func (p *RuleParser) parseTCPFlags(flags string) int32 {
+	if flags == "" {
+		return 0
+	}
+	var flagBits int32
+	for _, f := range strings.Split(flags, ",") {
+		bit, ok := xdpTCPFlagMap[f]
+		if !ok {
+			continue
+		}
+		flagBits |= int32(bit)
+	}
+	return flagBits
+}
+
+func (p *RuleParser) ParseTCP(dst *xdpwall.FilterTcpExt, ori *TCPExtension) {
+	if ori == nil {
+		return
+	}
+	dst.Enable = 1
+	dst.Src = uint16(ori.Src)
+	dst.Dst = uint16(ori.Dst)
+	if ori.Syn {
+		ori.Flags = &TCPFlags{
+			Mask: "SYN,ACK,PSH,URG,FIN,RST",
+			Comp: "SYN",
+		}
+	}
+	if ori.Flags != nil {
+		dst.Flags.Mask = p.parseTCPFlags(ori.Flags.Mask)
+		dst.Flags.Comp = p.parseTCPFlags(ori.Flags.Comp)
+	}
+}
+
+func (p *RuleParser) parseMultiPort(pairs *xdpwall.FilterMultiPortPairs, ports string) error {
+	if ports == "" {
+		return nil
+	}
+
+	pairs.Enable = 1
+	for i, p := range strings.Split(ports, ",") {
+		var minPort, maxPort uint16
+		if strings.Contains(p, ":") {
+			portRange := strings.Split(p, ":")
+			minp, err := strconv.ParseUint(portRange[0], 10, 16)
+			if err != nil {
+				return err
+			}
+			maxp, err := strconv.ParseUint(portRange[1], 10, 16)
+			if err != nil {
+				return err
+			}
+			minPort = uint16(minp)
+			maxPort = uint16(maxp)
+		} else {
+			minp, err := strconv.ParseUint(p, 10, 16)
+			if err != nil {
+				return err
+			}
+			minPort = uint16(minp)
+		}
+		pairs.Data[i].Port = minPort
+		pairs.Data[i].Max = maxPort
+	}
+
+	return nil
+}
+
+func (p *RuleParser) ParseMultiPort(dst *xdpwall.FilterMultiPortExt, ori *MultiPortExtension) error {
+	if ori == nil {
+		return nil
+	}
+	err := p.parseMultiPort(&dst.Src, ori.Src)
+	if err != nil {
+		return err
+	}
+	err = p.parseMultiPort(&dst.Dst, ori.Dst)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (p *RuleParser) ParseLimit(s string) xdpwall.FilterBucket {
+	ret := xdpwall.FilterBucket{
+		StartMoment:     1,
+		Capacity:        0,
+		Quantum:         0,
+		FillInterval:    0,
+		AvailableTokens: 0,
+		LatestTick:      0,
+	}
+
+	return ret
+}
+
+func (p *RuleParser) ParseRule(rule *Rule) (xdpwall.FilterRule, error) {
+	var err error
+	ret := xdpwall.FilterRule{
+		Enable:    1,
+		Interface: 0,
+		Target:    xdpTargetMap[rule.Target],
+		Protocol:  xdpProtocolMap[rule.Protocol],
+	}
+
+	iface, _ := net.InterfaceByName(rule.Interface)
+	if iface != nil {
+		ret.Interface = int32(iface.Index)
+	}
+	ret.Source, ret.SourceMask, err = internal.ParseV4CIDRU32(rule.Source)
+	if err != nil {
+		return ret, err
+	}
+	ret.Destination, ret.DestinationMask, err = internal.ParseV4CIDRU32(rule.Destination)
+	if err != nil {
+		return ret, err
+	}
+
+	// parse extensions
+	ext := rule.MatchExtension
+	if ext != nil {
+		ret.MatchExt.Enable = 1
+		// ip set
+		p.ParseIPSet(&ret.MatchExt.Set, ext.Set)
+		// udp
+		p.ParseUDP(&ret.MatchExt.Udp, ext.UDP)
+		// tcp
+		p.ParseTCP(&ret.MatchExt.Tcp, ext.TCP)
+		// multi port
+		err = p.ParseMultiPort(&ret.MatchExt.MultiPort, ext.MultiPort)
+		if err != nil {
+			return ret, err
+		}
+	}
+
+	return ret, nil
+}
+
 // Wall basically just a wrapper for xdpwall
 type Wall struct {
 	ipSets map[string]*IPSet
 	rules  []*Rule
 
-	xdp *xdpwall.XdpWall
+	parser *RuleParser
+	xdp    *xdpwall.XdpWall
 }
 
 func NewWall() *Wall {
@@ -124,20 +313,9 @@ func NewWall() *Wall {
 	}
 	w.xdp = xdpWall
 
+	w.parser = NewRuleParser()
+
 	return w
-}
-
-func (w *Wall) convertIP(ip string) (xdpwall.FilterIpItem, error) {
-	var err error
-	item := xdpwall.FilterIpItem{
-		Enable: 1,
-	}
-	item.Addr, item.Mask, err = internal.ParseV4CIDRU32(ip)
-	if err != nil {
-		return item, err
-	}
-
-	return item, nil
 }
 
 func (w *Wall) ListIPSet() ([]*IPSet, error) {
@@ -153,7 +331,7 @@ func (w *Wall) LookupIPSet(setName string) (*IPSet, error) {
 }
 
 func (w *Wall) CreateIPSet(setName string) error {
-	err := w.xdp.UpdateIPSet(w.genIPSetID(setName), xdpwall.IPSet{})
+	err := w.xdp.UpdateIPSet(str2hash(setName), xdpwall.IPSet{})
 	if err != nil {
 		return err
 	}
@@ -161,31 +339,20 @@ func (w *Wall) CreateIPSet(setName string) error {
 	return nil
 }
 
-func (w *Wall) enabledIPSize(set xdpwall.IPSet) int {
-	var size int
-	for _, item := range set {
-		if item.Enable == 0 {
-			break
-		}
-		size++
-	}
-	return size
-}
-
 func (w *Wall) AppendIP(setName string, ips ...string) error {
 	_, ok := w.ipSets[setName]
 	if !ok {
 		return errors.New("set does not exist")
 	}
-	setID := w.genIPSetID(setName)
+	setID := str2hash(setName)
 	set, err := w.xdp.LookupIPSet(setID)
 	if err != nil {
 		return err
 	}
-	size := w.enabledIPSize(set)
+	size := set.EnabledSize()
 
 	for i, ip := range ips {
-		item, err := w.convertIP(ip)
+		item, err := w.parser.ParseIP(ip)
 		if err != nil {
 			return err
 		}
@@ -212,7 +379,7 @@ func (w *Wall) RemoveIP(setName string, ip string) error {
 		return err
 	}
 
-	setID := w.genIPSetID(setName)
+	setID := str2hash(setName)
 	set, err := w.xdp.LookupIPSet(setID)
 	if err != nil {
 		return err
@@ -240,147 +407,6 @@ func (w *Wall) RemoveIP(setName string, ip string) error {
 	return nil
 }
 
-// genIPSetID use uint32 hash as ipset name
-func (w *Wall) genIPSetID(s string) uint32 {
-	if s == "" {
-		return 0
-	}
-	hasher := fnv.New32()
-	hasher.Write([]byte(s))
-	return hasher.Sum32()
-}
-
-func (w *Wall) parseMultiPort(raw string) (port uint16, maxPort uint16, err error) {
-	var p, m uint64
-	if strings.Contains(raw, ":") {
-		portRange := strings.Split(raw, ":")
-		p, err = strconv.ParseUint(portRange[0], 10, 16)
-		if err != nil {
-			return
-		}
-		m, err = strconv.ParseUint(portRange[1], 10, 16)
-		if err != nil {
-			return
-		}
-	} else {
-		p, err = strconv.ParseUint(raw, 10, 16)
-		if err != nil {
-			return
-		}
-	}
-
-	port = uint16(p)
-	maxPort = uint16(m)
-	return
-}
-
-func (w *Wall) parseRule(rule *Rule) (xdpwall.FilterRule, error) {
-	var err error
-	ret := xdpwall.FilterRule{
-		Enable:    1,
-		Interface: 0,
-		Target:    xdpTargetMap[rule.Target],
-		Protocol:  xdpProtocolMap[rule.Protocol],
-	}
-
-	iface, _ := net.InterfaceByName(rule.Interface)
-	if iface != nil {
-		ret.Interface = int32(iface.Index)
-	}
-
-	ret.Source, ret.SourceMask, err = internal.ParseV4CIDRU32(rule.Source)
-	if err != nil {
-		return ret, err
-	}
-
-	ret.Destination, ret.DestinationMask, err = internal.ParseV4CIDRU32(rule.Destination)
-	if err != nil {
-		return ret, err
-	}
-
-	ext := rule.MatchExtension
-	if ext != nil {
-		ret.MatchExt.Enable = 1
-
-		// ip set
-		if ext.Set != nil {
-			ret.MatchExt.Set.Enable = 1
-			ret.MatchExt.Set.Id = w.genIPSetID(ext.Set.Name)
-			ret.MatchExt.Set.Direction = xdpIpSetTypeMap[ext.Set.Direction]
-		}
-
-		// udp
-		if ext.UDP != nil {
-			ret.MatchExt.Udp.Enable = 1
-			ret.MatchExt.Udp.Src = uint16(ext.UDP.Src)
-			ret.MatchExt.Udp.Dst = uint16(ext.UDP.Src)
-		}
-
-		// tcp
-		if ext.TCP != nil {
-			ret.MatchExt.Tcp.Enable = 1
-			ret.MatchExt.Tcp.Src = uint16(ext.TCP.Src)
-			ret.MatchExt.Tcp.Dst = uint16(ext.TCP.Dst)
-			if ext.TCP.Syn {
-				ext.TCP.Flags = &TCPFlags{
-					Mask: "SYN,ACK,PSH,URG,FIN,RST",
-					Comp: "SYN",
-				}
-			}
-			if ext.TCP.Flags != nil {
-				if ext.TCP.Flags.Mask != "" {
-					for _, f := range strings.Split(ext.TCP.Flags.Mask, ",") {
-						tcpFlag, ok := xdpTCPFlagMap[f]
-						if !ok {
-							continue
-						}
-						ret.MatchExt.Tcp.Flags.Mask |= int32(tcpFlag)
-					}
-				}
-				if ext.TCP.Flags.Comp != "" {
-					for _, f := range strings.Split(ext.TCP.Flags.Comp, ",") {
-						tcpFlag, ok := xdpTCPFlagMap[f]
-						if !ok {
-							continue
-						}
-						ret.MatchExt.Tcp.Flags.Comp |= int32(tcpFlag)
-					}
-				}
-			}
-		}
-
-		if ext.MultiPort != nil {
-			// multi ports
-			if ext.MultiPort.Src != "" {
-				ret.MatchExt.MultiPort.Src.Enable = 1
-				ports := strings.Split(ext.MultiPort.Src, ",")
-				for i, p := range ports {
-					port, maxPort, err := w.parseMultiPort(p)
-					if err != nil {
-						return ret, err
-					}
-					ret.MatchExt.MultiPort.Src.Data[i].Port = port
-					ret.MatchExt.MultiPort.Src.Data[i].Max = maxPort
-				}
-			}
-			if ext.MultiPort.Dst != "" {
-				ret.MatchExt.MultiPort.Dst.Enable = 1
-				ports := strings.Split(ext.MultiPort.Dst, ",")
-				for i, p := range ports {
-					port, maxPort, err := w.parseMultiPort(p)
-					if err != nil {
-						return ret, err
-					}
-					ret.MatchExt.MultiPort.Dst.Data[i].Port = port
-					ret.MatchExt.MultiPort.Dst.Data[i].Max = maxPort
-				}
-			}
-		}
-	}
-
-	return ret, nil
-}
-
 func (w *Wall) ListRule() ([]*Rule, error) {
 	return w.rules, nil
 }
@@ -393,7 +419,7 @@ func (w *Wall) InsertRule(pos int, rule *Rule) error {
 		return fmt.Errorf("pos %d out of range", pos)
 	}
 
-	xdpRule, err := w.parseRule(rule)
+	xdpRule, err := w.parser.ParseRule(rule)
 	if err != nil {
 		return err
 	}
@@ -439,7 +465,7 @@ func (w *Wall) AppendRule(rules ...*Rule) error {
 
 	size := len(w.xdp.ListRules())
 	for i, r := range rules {
-		xdpRule, err := w.parseRule(r)
+		xdpRule, err := w.parser.ParseRule(r)
 		if err != nil {
 			return err
 		}

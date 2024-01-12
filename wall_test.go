@@ -156,7 +156,7 @@ func printIPSet(wall *Wall, setName string) {
 	set, err := wall.LookupIPSet(setName)
 	fatal(err)
 
-	setRaw, err := wall.xdp.LookupIPSet(wall.genIPSetID(setName))
+	setRaw, err := wall.xdp.LookupIPSet(str2hash(setName))
 	fatal(err)
 
 	for i, addr := range set.Addrs {
