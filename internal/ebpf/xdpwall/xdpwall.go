@@ -132,7 +132,7 @@ func (x *XdpWall) ListRules() []FilterRule {
 // UpdateRule updates a rule.
 // Since the array is of constant size, deletion operations is not supported.
 // To clear an array element, use Update to insert a zero value to that index.
-func (x *XdpWall) UpdateRule(key uint32, value FilterRule) error {
+func (x *XdpWall) UpdateRule(key uint32, value *FilterRule) error {
 	return x.objs.RuleMap.Update(key, value, ebpf.UpdateAny)
 }
 
@@ -140,9 +140,12 @@ func (x *XdpWall) UpdateRules(keys []uint32, values []FilterRule) (int, error) {
 	return x.objs.RuleMap.BatchUpdate(keys, values, nil)
 }
 
-// CreateBucket create a token bucket.
-func (x *XdpWall) CreateBucket(key uint32, value FilterBucket) error {
-	return x.objs.BucketMap.Put(key, value)
+func (x *XdpWall) UpdateBucket(key uint32, value *FilterBucket) error {
+	return x.objs.BucketMap.Update(key, value, ebpf.UpdateAny)
+}
+
+func (x *XdpWall) UpdateMatchExt(key uint32, value *FilterMatchExt) error {
+	return x.objs.MatchExtMap.Update(key, value, ebpf.UpdateAny)
 }
 
 func (x *XdpWall) ReadMatchEvent() (FilterMatchEvent, error) {

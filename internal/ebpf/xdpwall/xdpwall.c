@@ -95,7 +95,6 @@ struct multi_port_ext {
 
 // example: -m comment --comment "foo"
 struct match_ext {
-    s16 enable;
     struct set_ext set;
     struct udp_ext udp;
     struct tcp_ext tcp;
@@ -114,9 +113,6 @@ struct rule {
     u32 source_mask;
     u32 destination;
     u32 destination_mask;
-    
-    struct match_ext match_ext;
-    struct target_ext target_ext;
 };
 
 struct {
@@ -125,6 +121,13 @@ struct {
     __type(key, __u32);
     __type(value, struct rule);
 } rule_map SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+	__uint(max_entries, MAX_RULES);
+    __type(key, __u32);
+    __type(value, struct match_ext);
+} match_ext_map SEC(".maps");
 
 struct match_event {
     int rule_index;
@@ -169,21 +172,9 @@ struct bucket {
     u64 start_moment;
     u64 capacity;
     u64 quantum;
-    u32 fill_interval;
+    u64 fill_interval;
     u64 available_tokens;
     u64 latest_tick;
-};
-
-static struct bucket tb_create(__u32 interval, __u64 capacity, __u64 quantum) {
-    struct bucket tb = {
-        .start_moment = bpf_ktime_get_ns(),
-        .capacity = capacity,
-        .latest_tick = 0,
-        .fill_interval = interval,
-        .quantum = quantum,
-        .available_tokens = capacity,
-    };
-    return tb;
 };
 
 // calculate how many token filling cycles have elapsed from the start time
@@ -372,15 +363,13 @@ static __u64 traverse_rules(void *map, __u32 *key, struct rule *rule, struct cbs
 
     // hit the basic rule here
     ctx->hit = 1;
-    if (!rule->match_ext.enable) {    
+    struct match_ext *ext = bpf_map_lookup_elem(&match_ext_map, key);
+    if (!ext) {
         ctx->action = rule->target;
         return 1;
     }
 
-    // match extensions
-    struct match_ext ext = rule->match_ext;
-    // ip set
-    if (ext.set.enable && !(ctx->hit = match_set(ctx->ip, ext.set))) {
+    if (ext->set.enable && !(ctx->hit = match_set(ctx->ip, ext->set))) {
         return 0;
     }
 
@@ -390,16 +379,16 @@ static __u64 traverse_rules(void *map, __u32 *key, struct rule *rule, struct cbs
             break;
         case IPPROTO_UDP:
             if (ctx->udp) {
-                if (ext.udp.enable && !(ctx->hit = match_udp(ctx->udp, &ext.udp))) return 0;
-                if (ext.multi_port.src.enable && !(ctx->hit = match_multi_port(bpf_htons(ctx->udp->source), &ext.multi_port.src))) return 0;
-                if (ext.multi_port.dst.enable && !(ctx->hit = match_multi_port(bpf_htons(ctx->udp->dest), &ext.multi_port.dst))) return 0;
+                if (ext->udp.enable && !(ctx->hit = match_udp(ctx->udp, &ext->udp))) return 0;
+                if (ext->multi_port.src.enable && !(ctx->hit = match_multi_port(bpf_htons(ctx->udp->source), &ext->multi_port.src))) return 0;
+                if (ext->multi_port.dst.enable && !(ctx->hit = match_multi_port(bpf_htons(ctx->udp->dest), &ext->multi_port.dst))) return 0;
             }
             break;
         case IPPROTO_TCP:
             if (ctx->tcp) {
-                if (ext.tcp.enable && !(ctx->hit = match_tcp(ctx->tcp, &ext.tcp))) return 0;
-                if (ext.multi_port.src.enable && !(ctx->hit = match_multi_port(bpf_htons(ctx->tcp->source), &ext.multi_port.src))) return 0;
-                if (ext.multi_port.dst.enable && !(ctx->hit = match_multi_port(bpf_htons(ctx->tcp->dest), &ext.multi_port.dst))) return 0;
+                if (ext->tcp.enable && !(ctx->hit = match_tcp(ctx->tcp, &ext->tcp))) return 0;
+                if (ext->multi_port.src.enable && !(ctx->hit = match_multi_port(bpf_htons(ctx->tcp->source), &ext->multi_port.src))) return 0;
+                if (ext->multi_port.dst.enable && !(ctx->hit = match_multi_port(bpf_htons(ctx->tcp->dest), &ext->multi_port.dst))) return 0;
             }
             break;
         default:

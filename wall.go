@@ -10,7 +10,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/cccoven/trafficbus/internal"
 	"github.com/cccoven/trafficbus/internal/ebpf/xdpwall"
@@ -47,7 +46,12 @@ var (
 		"RST": xdpwall.FilterTcpFlagRST,
 	}
 
-	tokenBucketLimit = map[string]time.Duration{}
+	tokenBucketLimit = map[string]uint64{
+		"second": 1,
+		"minute": 1 * 60,
+		"hour":   1 * 60 * 60,
+		"day":    1 * 60 * 60 * 24,
+	}
 )
 
 type IPSet struct {
@@ -120,7 +124,7 @@ func str2hash(s string) uint32 {
 	return hasher.Sum32()
 }
 
-type RuleParser struct{}
+type RuleParser struct {}
 
 func NewRuleParser() *RuleParser {
 	return &RuleParser{}
@@ -239,17 +243,42 @@ func (p *RuleParser) ParseMultiPort(dst *xdpwall.FilterMultiPortExt, ori *MultiP
 	return nil
 }
 
-func (p *RuleParser) ParseLimit(s string) xdpwall.FilterBucket {
-	ret := xdpwall.FilterBucket{
-		StartMoment:     1,
-		Capacity:        0,
-		Quantum:         0,
-		FillInterval:    0,
-		AvailableTokens: 0,
-		LatestTick:      0,
+func (p *RuleParser) ParseLimit(s string) (*xdpwall.FilterBucket, error) {
+	rate := strings.Split(s, "/")
+	ret := &xdpwall.FilterBucket{}
+
+	capacity, err := strconv.ParseUint(rate[0], 10, 64)
+	if err != nil {
+		return nil, err
 	}
 
-	return ret
+	seconds, ok := tokenBucketLimit[rate[1]]
+	if !ok {
+		return nil, fmt.Errorf("unspported rate: %s", rate[1])
+	}
+
+	ret.StartMoment = 1
+	ret.Capacity = capacity
+	ret.Quantum = capacity
+	ret.FillInterval = seconds
+
+	return ret, nil
+}
+
+func (p *RuleParser) ParseMatchExtension(ext *MatchExtension) (*xdpwall.FilterMatchExt, error) {
+	ret := &xdpwall.FilterMatchExt{}
+	// ip set
+	p.ParseIPSet(&ret.Set, ext.Set)
+	// udp
+	p.ParseUDP(&ret.Udp, ext.UDP)
+	// tcp
+	p.ParseTCP(&ret.Tcp, ext.TCP)
+	// multi port
+	err := p.ParseMultiPort(&ret.MultiPort, ext.MultiPort)
+	if err != nil {
+		return nil, err
+	}
+	return ret, nil
 }
 
 func (p *RuleParser) ParseRule(rule *Rule) (xdpwall.FilterRule, error) {
@@ -272,23 +301,6 @@ func (p *RuleParser) ParseRule(rule *Rule) (xdpwall.FilterRule, error) {
 	ret.Destination, ret.DestinationMask, err = internal.ParseV4CIDRU32(rule.Destination)
 	if err != nil {
 		return ret, err
-	}
-
-	// parse extensions
-	ext := rule.MatchExtension
-	if ext != nil {
-		ret.MatchExt.Enable = 1
-		// ip set
-		p.ParseIPSet(&ret.MatchExt.Set, ext.Set)
-		// udp
-		p.ParseUDP(&ret.MatchExt.Udp, ext.UDP)
-		// tcp
-		p.ParseTCP(&ret.MatchExt.Tcp, ext.TCP)
-		// multi port
-		err = p.ParseMultiPort(&ret.MatchExt.MultiPort, ext.MultiPort)
-		if err != nil {
-			return ret, err
-		}
 	}
 
 	return ret, nil
@@ -424,8 +436,31 @@ func (w *Wall) InsertRule(pos int, rule *Rule) error {
 		return err
 	}
 
+	if rule.MatchExtension != nil {
+		ext, err := w.parser.ParseMatchExtension(rule.MatchExtension)
+		if err != nil {
+			return err
+		}
+		err = w.xdp.UpdateMatchExt(uint32(pos), ext)
+		if err != nil {
+			return err
+		}
+
+		if rule.MatchExtension.Limit != "" {
+			// create a token bucket for this rule
+			bucket, err := w.parser.ParseLimit(rule.MatchExtension.Limit)
+			if err != nil {
+				return err
+			}
+			err = w.xdp.UpdateBucket(uint32(pos), bucket)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
 	if pos == size {
-		err = w.xdp.UpdateRule(uint32(pos), xdpRule)
+		err = w.xdp.UpdateRule(uint32(pos), &xdpRule)
 		if err != nil {
 			return err
 		}
@@ -469,8 +504,32 @@ func (w *Wall) AppendRule(rules ...*Rule) error {
 		if err != nil {
 			return err
 		}
-		keys = append(keys, uint32(i+size))
+		key := uint32(i + size)
+		keys = append(keys, key)
 		values = append(values, xdpRule)
+
+		if r.MatchExtension != nil {
+			ext, err := w.parser.ParseMatchExtension(r.MatchExtension)
+			if err != nil {
+				return err
+			}
+			err = w.xdp.UpdateMatchExt(key, ext)
+			if err != nil {
+				return err
+			}
+		}
+
+		// if r.MatchExtension != nil {
+		// 	// create a token bucket for this rule
+		// 	bucket, err := w.parser.ParseLimit(r.MatchExtension.Limit)
+		// 	if err != nil {
+		// 		return err
+		// 	}
+		// 	err = w.xdp.UpdateBucket(key, bucket)
+		// 	if err != nil {
+		// 		return err
+		// 	}
+		// }
 	}
 
 	_, err := w.xdp.UpdateRules(keys, values)
@@ -491,7 +550,7 @@ func (w *Wall) RemoveRule(pos int) error {
 	}
 
 	if pos == size {
-		err := w.xdp.UpdateRule(uint32(pos), xdpwall.FilterRule{})
+		err := w.xdp.UpdateRule(uint32(pos), nil)
 		if err != nil {
 			return err
 		}

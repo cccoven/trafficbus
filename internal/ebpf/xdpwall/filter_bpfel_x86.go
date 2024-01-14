@@ -16,8 +16,7 @@ type FilterBucket struct {
 	StartMoment     uint64
 	Capacity        uint64
 	Quantum         uint64
-	FillInterval    uint32
-	_               [4]byte
+	FillInterval    uint64
 	AvailableTokens uint64
 	LatestTick      uint64
 }
@@ -44,8 +43,6 @@ type FilterMatchEvent struct {
 }
 
 type FilterMatchExt struct {
-	Enable    int16
-	_         [2]byte
 	Set       FilterSetExt
 	Udp       FilterUdpExt
 	_         [2]byte
@@ -86,8 +83,6 @@ type FilterRule struct {
 	SourceMask      uint32
 	Destination     uint32
 	DestinationMask uint32
-	MatchExt        FilterMatchExt
-	TargetExt       FilterTargetExt
 }
 
 type FilterSetExt struct {
@@ -191,6 +186,7 @@ type FilterMapSpecs struct {
 	BucketMap   *ebpf.MapSpec `ebpf:"bucket_map"`
 	IpSetMap    *ebpf.MapSpec `ebpf:"ip_set_map"`
 	MatchEvents *ebpf.MapSpec `ebpf:"match_events"`
+	MatchExtMap *ebpf.MapSpec `ebpf:"match_ext_map"`
 	RuleMap     *ebpf.MapSpec `ebpf:"rule_map"`
 }
 
@@ -216,6 +212,7 @@ type FilterMaps struct {
 	BucketMap   *ebpf.Map `ebpf:"bucket_map"`
 	IpSetMap    *ebpf.Map `ebpf:"ip_set_map"`
 	MatchEvents *ebpf.Map `ebpf:"match_events"`
+	MatchExtMap *ebpf.Map `ebpf:"match_ext_map"`
 	RuleMap     *ebpf.Map `ebpf:"rule_map"`
 }
 
@@ -224,6 +221,7 @@ func (m *FilterMaps) Close() error {
 		m.BucketMap,
 		m.IpSetMap,
 		m.MatchEvents,
+		m.MatchExtMap,
 		m.RuleMap,
 	)
 }
