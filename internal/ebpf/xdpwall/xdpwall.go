@@ -13,7 +13,7 @@ import (
 	"github.com/cilium/ebpf/rlimit"
 )
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -type ip_set_direction -type tcp_flag -type ip_item -type match_ext -type set_ext -type udp_ext -type tcp_ext -type tcp_flags -type multi_port_ext -type multi_port_pairs -type port_pair -type match_event -type target_ext -target amd64 Filter xdpwall.c -- -I../include
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -type target -type protocol -type ip_set_direction -type tcp_flag -type ip_item -type set_ext -type udp_ext -type tcp_ext -type tcp_flags -type multi_port_ext -type multi_port_pairs -type port_pair -type match_event -type target_ext -target amd64 Filter xdpwall.c -- -I../include
 
 type IPSet [200]FilterIpItem
 
@@ -140,12 +140,20 @@ func (x *XdpWall) UpdateRules(keys []uint32, values []FilterRule) (int, error) {
 	return x.objs.RuleMap.BatchUpdate(keys, values, nil)
 }
 
+func (x *XdpWall) UpdateMatchExt(key uint32, value *FilterMatchExt) error {
+	return x.objs.MatchExtMap.Update(key, value, ebpf.UpdateAny)
+}
+
+func (x *XdpWall) UpdateMatchExts(keys []uint32, values []FilterMatchExt) (int, error) {
+	return x.objs.MatchExtMap.BatchUpdate(keys, values, nil)
+}
+
 func (x *XdpWall) UpdateBucket(key uint32, value *FilterBucket) error {
 	return x.objs.BucketMap.Update(key, value, ebpf.UpdateAny)
 }
 
-func (x *XdpWall) UpdateMatchExt(key uint32, value *FilterMatchExt) error {
-	return x.objs.MatchExtMap.Update(key, value, ebpf.UpdateAny)
+func (x *XdpWall) UpdateBuckets(keys []uint32, values []FilterBucket) (int, error) {
+	return x.objs.BucketMap.BatchUpdate(keys, values, nil)
 }
 
 func (x *XdpWall) ReadMatchEvent() (FilterMatchEvent, error) {

@@ -47,10 +47,10 @@ var (
 	}
 
 	tokenBucketLimit = map[string]uint64{
-		"second": 1,
-		"minute": 1 * 60,
-		"hour":   1 * 60 * 60,
-		"day":    1 * 60 * 60 * 24,
+		"second": 1 * 1000000000, // nanosec
+		"minute": (1 * 60) * 1000000000,
+		"hour":   (1 * 60 * 60) * 1000000000,
+		"day":    (1 * 60 * 60 * 24) * 1000000000,
 	}
 )
 
@@ -124,10 +124,14 @@ func str2hash(s string) uint32 {
 	return hasher.Sum32()
 }
 
-type RuleParser struct {}
+type RuleParser struct {
+	xdp *xdpwall.XdpWall
+}
 
-func NewRuleParser() *RuleParser {
-	return &RuleParser{}
+func NewRuleParser(xdp *xdpwall.XdpWall) *RuleParser {
+	return &RuleParser{
+		xdp: xdp,
+	}
 }
 
 func (p *RuleParser) ParseIP(ip string) (xdpwall.FilterIpItem, error) {
@@ -160,7 +164,7 @@ func (p *RuleParser) ParseUDP(dst *xdpwall.FilterUdpExt, ori *UDPExtension) {
 	dst.Dst = uint16(ori.Src)
 }
 
-func (p *RuleParser) parseTCPFlags(flags string) int32 {
+func (p *RuleParser) ParseTCPFlags(flags string) int32 {
 	if flags == "" {
 		return 0
 	}
@@ -189,8 +193,8 @@ func (p *RuleParser) ParseTCP(dst *xdpwall.FilterTcpExt, ori *TCPExtension) {
 		}
 	}
 	if ori.Flags != nil {
-		dst.Flags.Mask = p.parseTCPFlags(ori.Flags.Mask)
-		dst.Flags.Comp = p.parseTCPFlags(ori.Flags.Comp)
+		dst.Flags.Mask = p.ParseTCPFlags(ori.Flags.Mask)
+		dst.Flags.Comp = p.ParseTCPFlags(ori.Flags.Comp)
 	}
 }
 
@@ -281,9 +285,9 @@ func (p *RuleParser) ParseMatchExtension(ext *MatchExtension) (*xdpwall.FilterMa
 	return ret, nil
 }
 
-func (p *RuleParser) ParseRule(rule *Rule) (xdpwall.FilterRule, error) {
+func (p *RuleParser) ParseRule(rule *Rule) (*xdpwall.FilterRule, error) {
 	var err error
-	ret := xdpwall.FilterRule{
+	ret := &xdpwall.FilterRule{
 		Enable:    1,
 		Interface: 0,
 		Target:    xdpTargetMap[rule.Target],
@@ -296,15 +300,137 @@ func (p *RuleParser) ParseRule(rule *Rule) (xdpwall.FilterRule, error) {
 	}
 	ret.Source, ret.SourceMask, err = internal.ParseV4CIDRU32(rule.Source)
 	if err != nil {
-		return ret, err
+		return nil, err
 	}
 	ret.Destination, ret.DestinationMask, err = internal.ParseV4CIDRU32(rule.Destination)
 	if err != nil {
-		return ret, err
+		return nil, err
 	}
 
 	return ret, nil
 }
+
+func (p *RuleParser) SyncRule(key uint32, value *Rule) error {
+	var (
+		xdpRule     *xdpwall.FilterRule
+		xdpMatchExt *xdpwall.FilterMatchExt
+		xdpBucket   *xdpwall.FilterBucket
+		err         error
+	)
+
+	xdpRule, err = p.ParseRule(value)
+	if err != nil {
+		return err
+	}
+
+	if value.MatchExtension != nil {
+		xdpMatchExt, err = p.ParseMatchExtension(value.MatchExtension)
+		if err != nil {
+			return err
+		}
+
+		if value.MatchExtension.Limit != "" {
+			// create a token bucket for this rule
+			xdpBucket, err = p.ParseLimit(value.MatchExtension.Limit)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	if xdpRule != nil {
+		if err = p.xdp.UpdateRule(key, xdpRule); err != nil {
+			return err
+		}
+	}
+	if xdpMatchExt != nil {
+		if err = p.xdp.UpdateMatchExt(key, xdpMatchExt); err != nil {
+			return err
+		}
+	}
+	if xdpBucket != nil {
+		if err = p.xdp.UpdateBucket(key, xdpBucket); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// func (p *RuleParser) SyncRules(keys []uint32, rules []*Rule) error {
+// 	var values []xdpwall.FilterRule
+
+// 	for _, rule := range rules {
+// 		xr, err := p.ParseRule(rule)
+// 		if err != nil {
+// 			return err
+// 		}
+// 		values = append(values, xr)
+// 	}
+// }
+
+// func (p *RuleParser) SyncRules(rules []*Rule) error {
+// 	var xdpRulekeys []uint32
+// 	var xdpRules []xdpwall.FilterRule
+// 	var xdpRuleExtensionKeys []uint32
+// 	var xdpRuleExtensions []xdpwall.FilterMatchExt
+// 	var xdpBucketKeys []uint32
+// 	var xdpBuckets []xdpwall.FilterBucket
+// 	size := len(p.xdp.ListRules())
+
+// 	for i, rule := range rules {
+// 		xr, err := p.ParseRule(rule)
+// 		if err != nil {
+// 			return err
+// 		}
+
+// 		key := uint32(i + size)
+// 		xdpRules = append(xdpRules, xr)
+// 		xdpRulekeys = append(xdpRulekeys, key)
+
+// 		if rule.MatchExtension != nil {
+// 			ext, err := p.ParseMatchExtension(rule.MatchExtension)
+// 			if err != nil {
+// 				return err
+// 			}
+// 			xdpRuleExtensions = append(xdpRuleExtensions, ext)
+// 			xdpRuleExtensionKeys = append(xdpRuleExtensionKeys, key)
+
+// 			if rule.MatchExtension.Limit != "" {
+// 				bucket, err := p.ParseLimit(rule.MatchExtension.Limit)
+// 				if err != nil {
+// 					return err
+// 				}
+
+// 				xdpBuckets = append(xdpBuckets, bucket)
+// 				xdpBucketKeys = append(xdpBucketKeys, key)
+// 			}
+// 		}
+// 	}
+
+// 	if len(xdpBucketKeys) > 0 {
+// 		_, err := p.xdp.UpdateRules(xdpRulekeys, xdpRules)
+// 		if err != nil {
+// 			return err
+// 		}
+// 	}
+
+// 	if len(xdpRuleExtensionKeys) > 0 {
+// 		_, err := p.xdp.UpdateMatchExts(xdpRuleExtensionKeys, xdpRuleExtensions)
+// 		if err != nil {
+// 			return err
+// 		}
+// 	}
+
+// 	if len(xdpBucketKeys) > 0 {
+// 		_, err := p.xdp.UpdateBuckets(xdpBucketKeys, xdpBuckets)
+// 		if err != nil {
+// 			return err
+// 		}
+// 	}
+
+// 	return nil
+// }
 
 // Wall basically just a wrapper for xdpwall
 type Wall struct {
@@ -325,7 +451,7 @@ func NewWall() *Wall {
 	}
 	w.xdp = xdpWall
 
-	w.parser = NewRuleParser()
+	w.parser = NewRuleParser(xdpWall)
 
 	return w
 }
@@ -426,67 +552,62 @@ func (w *Wall) ListRule() ([]*Rule, error) {
 func (w *Wall) InsertRule(pos int, rule *Rule) error {
 	rules := w.xdp.ListRules()
 	size := len(rules)
-
 	if pos > size {
 		return fmt.Errorf("pos %d out of range", pos)
 	}
 
-	xdpRule, err := w.parser.ParseRule(rule)
+	err := w.parser.SyncRule(uint32(pos), rule)
 	if err != nil {
 		return err
-	}
-
-	if rule.MatchExtension != nil {
-		ext, err := w.parser.ParseMatchExtension(rule.MatchExtension)
-		if err != nil {
-			return err
-		}
-		err = w.xdp.UpdateMatchExt(uint32(pos), ext)
-		if err != nil {
-			return err
-		}
-
-		if rule.MatchExtension.Limit != "" {
-			// create a token bucket for this rule
-			bucket, err := w.parser.ParseLimit(rule.MatchExtension.Limit)
-			if err != nil {
-				return err
-			}
-			err = w.xdp.UpdateBucket(uint32(pos), bucket)
-			if err != nil {
-				return err
-			}
-		}
 	}
 
 	if pos == size {
-		err = w.xdp.UpdateRule(uint32(pos), &xdpRule)
-		if err != nil {
-			return err
-		}
 		w.rules = append(w.rules, rule)
-		return nil
+	} else {
+		for i := pos; i < len(w.rules); i++ {
+			err = w.parser.SyncRule(uint32(i+1), w.rules[i])
+			if err != nil {
+				return err
+			}
+		}
+		w.rules = append(w.rules, nil)
+		copy(w.rules[pos+1:], w.rules[pos:])
+		w.rules[pos] = rule
 	}
 
-	rules = append(rules, xdpwall.FilterRule{})
-	copy(rules[pos+1:], rules[pos:])
-	rules[pos] = xdpRule
-	size++
+	// if pos == size {
+	// 	// append
+	// 	err := w.parser.SyncRule(uint32(pos), rule)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	w.rules = append(w.rules, rule)
+	// } else {
+	// 	size++
+	// 	for i := pos; i < size; i++ {
 
-	var keys []uint32
-	var values []xdpwall.FilterRule
-	for i := pos; i < size; i++ {
-		keys = append(keys, uint32(i))
-		values = append(values, rules[i])
-	}
-	_, err = w.xdp.UpdateRules(keys, values)
-	if err != nil {
-		return err
-	}
+	// 	}
+	// }
 
-	w.rules = append(w.rules, nil)
-	copy(w.rules[pos+1:], w.rules[pos:])
-	w.rules[pos] = rule
+	// rules = append(rules, xdpwall.FilterRule{})
+	// copy(rules[pos+1:], rules[pos:])
+	// rules[pos] = xdpRule
+	// size++
+
+	// var keys []uint32
+	// var values []xdpwall.FilterRule
+	// for i := pos; i < size; i++ {
+	// 	keys = append(keys, uint32(i))
+	// 	values = append(values, rules[i])
+	// }
+	// _, err = w.xdp.UpdateRules(keys, values)
+	// if err != nil {
+	// 	return err
+	// }
+
+	// w.rules = append(w.rules, nil)
+	// copy(w.rules[pos+1:], w.rules[pos:])
+	// w.rules[pos] = rule
 	return nil
 }
 
@@ -495,47 +616,52 @@ func (w *Wall) AppendRule(rules ...*Rule) error {
 		return nil
 	}
 
-	var keys []uint32
-	var values []xdpwall.FilterRule
+	// var keys []uint32
+	// var values []xdpwall.FilterRule
 
 	size := len(w.xdp.ListRules())
 	for i, r := range rules {
-		xdpRule, err := w.parser.ParseRule(r)
+		err := w.parser.SyncRule(uint32(i+size), r)
 		if err != nil {
 			return err
 		}
-		key := uint32(i + size)
-		keys = append(keys, key)
-		values = append(values, xdpRule)
 
-		if r.MatchExtension != nil {
-			ext, err := w.parser.ParseMatchExtension(r.MatchExtension)
-			if err != nil {
-				return err
-			}
-			err = w.xdp.UpdateMatchExt(key, ext)
-			if err != nil {
-				return err
-			}
-		}
+		// xdpRule, err := w.parser.ParseRule(r)
+		// if err != nil {
+		// 	return err
+		// }
+		// key := uint32(i + size)
+		// keys = append(keys, key)
+		// values = append(values, *xdpRule)
 
 		// if r.MatchExtension != nil {
-		// 	// create a token bucket for this rule
-		// 	bucket, err := w.parser.ParseLimit(r.MatchExtension.Limit)
+		// 	ext, err := w.parser.ParseMatchExtension(r.MatchExtension)
 		// 	if err != nil {
 		// 		return err
 		// 	}
-		// 	err = w.xdp.UpdateBucket(key, bucket)
+		// 	err = w.xdp.UpdateMatchExt(key, ext)
 		// 	if err != nil {
 		// 		return err
+		// 	}
+
+		// 	if r.MatchExtension.Limit != "" {
+		// 		// create a token bucket for this rule
+		// 		bucket, err := w.parser.ParseLimit(r.MatchExtension.Limit)
+		// 		if err != nil {
+		// 			return err
+		// 		}
+		// 		err = w.xdp.UpdateBucket(key, bucket)
+		// 		if err != nil {
+		// 			return err
+		// 		}
 		// 	}
 		// }
 	}
 
-	_, err := w.xdp.UpdateRules(keys, values)
-	if err != nil {
-		return err
-	}
+	// _, err := w.xdp.UpdateRules(keys, values)
+	// if err != nil {
+	// 	return err
+	// }
 
 	w.rules = append(w.rules, rules...)
 	return nil

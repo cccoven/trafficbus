@@ -145,7 +145,6 @@ const enum protocol *protocol_t __attribute__((unused));
 const enum ip_set_direction *ip_set_directrion_t __attribute__((unused));
 const enum tcp_flag *tcp_flag_t __attribute__((unused));
 const struct ip_item *ip_item_t __attribute__((unused));
-const struct match_ext *match_ext_t __attribute__((unused));
 const struct set_ext *set_ext_t __attribute__((unused));
 const struct udp_ext *udp_ext_t __attribute__((unused));
 const struct tcp_ext *tcp_ext_t __attribute__((unused));
@@ -179,8 +178,6 @@ struct bucket {
 
 // calculate how many token filling cycles have elapsed from the start time
 static __u64 tb_current_tick(struct bucket *tb) {
-    // seconds
-    // __u64 now = bpf_ktime_get_ns() / 1000000000;
     return (bpf_ktime_get_ns() - tb->start_moment) / tb->fill_interval;
 }
 
@@ -207,10 +204,6 @@ static __u64 tb_take_available(struct bucket *tb, __u64 count) {
     }
     tb->available_tokens -= count;
     return count;
-}
-
-static __u64 tb_available(struct bucket *bucket) {
-    return 0;
 }
 
 struct {
@@ -341,6 +334,18 @@ static __s16 __always_inline match_multi_port(u16 port, struct multi_port_pairs 
     return hit;
 }
 
+static __s16 __always_inline within_limit(__u32 *key) {
+    struct bucket *tb;
+    tb = bpf_map_lookup_elem(&bucket_map, key);
+    // no limit for this rule
+    if (!tb) {
+        return 1;
+    }
+    u64 count = tb_take_available(tb, 1);
+    // __bpf_printk("take: %u, remain: %u", count, tb->available_tokens);
+    return count;
+}
+
 static __u64 traverse_rules(void *map, __u32 *key, struct rule *rule, struct cbstack *ctx) {
     if (!rule->enable) return 1;
 
@@ -396,6 +401,11 @@ static __u64 traverse_rules(void *map, __u32 *key, struct rule *rule, struct cbs
             break;
     }
 
+    if (!within_limit(key)) {
+        ctx->action = DROP;
+        return 1;
+    }
+
     if (ctx->hit) {
         ctx->action = rule->target;
         return 1;
@@ -404,7 +414,7 @@ static __u64 traverse_rules(void *map, __u32 *key, struct rule *rule, struct cbs
     return 0;
 }
 
-SEC("xdp")
+SEC("xdp/ingress_filter")
 int xdp_wall_func(struct xdp_md *ctx) {
     void *data = (void *)(long)ctx->data;
     void *data_end = (void *)(long)ctx->data_end;

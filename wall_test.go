@@ -198,7 +198,7 @@ func printRules(wall *Wall) {
 
 	for i, rule := range rules {
 		fmt.Printf(
-			"iface: %-10sifaceRaw: %-10dprot: %-10sprotRaw: %-10dsrc: %-20ssrcRaw: %-20sdst: %-20sdstRaw: %-20s\n",
+			"iface: %s/%-10dprot: %s/%-10dsrc: %s/%-20sdst: %s/%-20s\n",
 			rule.Interface,
 			rulesRaw[i].Interface,
 			rule.Protocol,
