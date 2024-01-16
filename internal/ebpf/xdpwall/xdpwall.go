@@ -33,11 +33,15 @@ type XdpWall struct {
 	links      map[int]link.Link
 	rbufReader *ringbuf.Reader
 	sync.Mutex
+
+	matchEventReader *ringbuf.Reader
+	matchEvent       chan FilterMatchEvent
 }
 
 func NewXdpWall() (*XdpWall, error) {
 	x := &XdpWall{
-		links: make(map[int]link.Link),
+		links:      make(map[int]link.Link),
+		matchEvent: make(chan FilterMatchEvent),
 	}
 
 	err := LoadFilterObjects(&x.objs, nil)
@@ -50,12 +54,38 @@ func NewXdpWall() (*XdpWall, error) {
 		return nil, err
 	}
 
-	x.rbufReader, err = ringbuf.NewReader(x.objs.MatchEvents)
+	x.matchEventReader, err = ringbuf.NewReader(x.objs.MatchEvents)
 	if err != nil {
 		return nil, err
 	}
 
+	go x.listenMatchEvent()
+
 	return x, nil
+}
+
+func (x *XdpWall) listenMatchEvent() {
+	for {
+		var evt FilterMatchEvent
+		record, err := x.matchEventReader.Read()
+		if err == ringbuf.ErrClosed {
+			return
+		}
+		if err != nil {
+			continue
+		}
+
+		err = binary.Read(bytes.NewBuffer(record.RawSample), binary.LittleEndian, &evt)
+		if err != nil {
+			continue
+		}
+
+		x.matchEvent <- evt
+	}
+}
+
+func (x *XdpWall) ReadMatchEvent() chan FilterMatchEvent {
+	return x.matchEvent
 }
 
 func (x *XdpWall) Stop() error {
@@ -65,8 +95,11 @@ func (x *XdpWall) Stop() error {
 			return err
 		}
 	}
-	x.rbufReader.Close()
-	return x.objs.Close()
+	x.matchEventReader.Close()
+	close(x.matchEvent)
+
+	x.objs.Close()
+	return nil
 }
 
 func (x *XdpWall) Attach(iface int) error {
@@ -79,11 +112,9 @@ func (x *XdpWall) Attach(iface int) error {
 		Interface: iface,
 	})
 	if err != nil {
-		log.Printf("could not attach xdp program: %s", err)
 		return err
 	}
 
-	log.Printf("attached xdp program to iface index %d", iface)
 	return nil
 }
 
@@ -133,6 +164,9 @@ func (x *XdpWall) ListRules() []FilterRule {
 // Since the array is of constant size, deletion operations is not supported.
 // To clear an array element, use Update to insert a zero value to that index.
 func (x *XdpWall) UpdateRule(key uint32, value *FilterRule) error {
+	if value == nil {
+		value = &FilterRule{}
+	}
 	return x.objs.RuleMap.Update(key, value, ebpf.UpdateAny)
 }
 
@@ -148,6 +182,10 @@ func (x *XdpWall) UpdateMatchExts(keys []uint32, values []FilterMatchExt) (int, 
 	return x.objs.MatchExtMap.BatchUpdate(keys, values, nil)
 }
 
+func (x *XdpWall) DeleteMatchExt(key uint32) error {
+	return x.objs.MatchExtMap.Delete(key)
+}
+
 func (x *XdpWall) UpdateBucket(key uint32, value *FilterBucket) error {
 	return x.objs.BucketMap.Update(key, value, ebpf.UpdateAny)
 }
@@ -156,17 +194,6 @@ func (x *XdpWall) UpdateBuckets(keys []uint32, values []FilterBucket) (int, erro
 	return x.objs.BucketMap.BatchUpdate(keys, values, nil)
 }
 
-func (x *XdpWall) ReadMatchEvent() (FilterMatchEvent, error) {
-	var l FilterMatchEvent
-	r, err := x.rbufReader.Read()
-	if err != nil {
-		return l, err
-	}
-
-	err = binary.Read(bytes.NewBuffer(r.RawSample), binary.LittleEndian, &l)
-	if err != nil {
-		return l, err
-	}
-
-	return l, nil
+func (x *XdpWall) DeleteBucket(key uint32) error {
+	return x.objs.BucketMap.Delete(key)
 }

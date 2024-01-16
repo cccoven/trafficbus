@@ -1,7 +1,7 @@
 //go:build ignore
 
 #include "bpf_endian.h"
-#include "common.h"
+#include "parser.h"
 
 char __license[] SEC("license") = "Dual MIT/GPL";
 
@@ -414,7 +414,7 @@ static __u64 traverse_rules(void *map, __u32 *key, struct rule *rule, struct cbs
     return 0;
 }
 
-SEC("xdp/ingress_filter")
+SEC("xdp/ingress/filter")
 int xdp_wall_func(struct xdp_md *ctx) {
     void *data = (void *)(long)ctx->data;
     void *data_end = (void *)(long)ctx->data_end;

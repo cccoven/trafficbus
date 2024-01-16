@@ -357,6 +357,22 @@ func (p *RuleParser) SyncRule(key uint32, value *Rule) error {
 	return nil
 }
 
+func (p *RuleParser) DeleteRule(key uint32) error {
+	err := p.xdp.UpdateRule(key, nil)
+	if err != nil {
+		return err
+	}
+	err = p.xdp.DeleteMatchExt(key)
+	if err != nil {
+		return err
+	}
+	err = p.xdp.DeleteBucket(key)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 // func (p *RuleParser) SyncRules(keys []uint32, rules []*Rule) error {
 // 	var values []xdpwall.FilterRule
 
@@ -432,6 +448,10 @@ func (p *RuleParser) SyncRule(key uint32, value *Rule) error {
 // 	return nil
 // }
 
+type WallOptions struct {
+	RuleFile string
+}
+
 // Wall basically just a wrapper for xdpwall
 type Wall struct {
 	ipSets map[string]*IPSet
@@ -441,7 +461,7 @@ type Wall struct {
 	xdp    *xdpwall.XdpWall
 }
 
-func NewWall() *Wall {
+func NewWall(options *WallOptions) *Wall {
 	w := new(Wall)
 	w.ipSets = make(map[string]*IPSet)
 
@@ -675,28 +695,40 @@ func (w *Wall) RemoveRule(pos int) error {
 		return fmt.Errorf("pos %d out of range", pos)
 	}
 
-	if pos == size {
-		err := w.xdp.UpdateRule(uint32(pos), nil)
-		if err != nil {
-			return err
-		}
-	} else {
-		copy(rules[pos:], rules[pos+1:])
-		size--
-
-		var keys []uint32
-		var values []xdpwall.FilterRule
-		for i := pos; i < size; i++ {
-			keys = append(keys, uint32(i))
-			values = append(values, rules[i])
-		}
-		_, err := w.xdp.UpdateRules(keys, values)
-		if err != nil {
-			return err
-		}
+	err := w.parser.DeleteRule(uint32(pos))
+	if err != nil {
+		return err
 	}
 
-	w.rules = append(w.rules[:pos], w.rules[pos+1:]...)
+	if pos == size {
+		// err := w.parser.DeleteRule(uint32(pos))
+		// if err != nil {
+		// 	return err
+		// }
+		w.rules = append(w.rules[:pos], w.rules[pos+1:]...)
+	} else {
+		for i := pos; i < size; i++ {
+			err := w.parser.SyncRule(uint32(i+1), w.rules[i])
+			if err != nil {
+				return err
+			}
+		}
+		w.rules = append(w.rules[:pos], w.rules[pos+1:]...)
+		// copy(rules[pos:], rules[pos+1:])
+		// size--
+		// var keys []uint32
+		// var values []xdpwall.FilterRule
+		// for i := pos; i < size; i++ {
+		// 	keys = append(keys, uint32(i))
+		// 	values = append(values, rules[i])
+		// }
+		// _, err := w.xdp.UpdateRules(keys, values)
+		// if err != nil {
+		// 	return err
+		// }
+	}
+
+	// w.rules = append(w.rules[:pos], w.rules[pos+1:]...)
 	return nil
 }
 
@@ -758,36 +790,35 @@ func (w *Wall) Run() error {
 	if err != nil {
 		return err
 	}
-
 	for _, iface := range ifaces {
-		w.xdp.Attach(iface.Index)
+		if err := w.xdp.Attach(iface.Index); err != nil {
+			return err
+		}
+		log.Printf("attached firewall to iface %s", iface.Name)
 	}
 
-	w.listenMatchEvent()
-
-	return err
+	go w.receiveEvents()
+	return nil
 }
 
 func (w *Wall) Stop() error {
 	return w.xdp.Stop()
 }
 
-func (w *Wall) listenMatchEvent() {
+func (w *Wall) receiveEvents() {
 	for {
-		evt, err := w.xdp.ReadMatchEvent()
-		if err != nil {
-			log.Printf("failed to read match event: %s", err.Error())
-			continue
+		select {
+		case me, ok := <-w.xdp.ReadMatchEvent():
+			if !ok {
+				return
+			}
+			rule := w.rules[me.RuleIndex]
+			if rule == nil {
+				continue
+			}
+			rule.Packets++
+			rule.Bytes += me.Bytes
+			log.Printf("rule.index: %d, rule.pkts: %d, rule.bytes: %d", me.RuleIndex, rule.Packets, rule.Bytes)
 		}
-
-		rule := w.rules[evt.RuleIndex]
-		if rule == nil {
-			continue
-		}
-
-		rule.Packets++
-		rule.Bytes += evt.Bytes
-
-		log.Printf("rule.index: %d, rule.pkts: %d, rule.bytes: %d", evt.RuleIndex, rule.Packets, rule.Bytes)
 	}
 }

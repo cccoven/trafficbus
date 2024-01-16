@@ -165,7 +165,7 @@ func printIPSet(wall *Wall, setName string) {
 }
 
 func TestIPSet(t *testing.T) {
-	wall := NewWall()
+	wall := NewWall(&WallOptions{})
 
 	err := wall.CreateIPSet("myset")
 	fatal(err)
@@ -212,7 +212,7 @@ func printRules(wall *Wall) {
 }
 
 func TestRules(t *testing.T) {
-	wall := NewWall()
+	wall := NewWall(&WallOptions{})
 	iface := "lo"
 	data := []*Rule{
 		{Interface: iface, Protocol: "ICMP"},
@@ -244,7 +244,7 @@ func TestRules(t *testing.T) {
 }
 
 func TestLoadFromJson(t *testing.T) {
-	wall := NewWall()
+	wall := NewWall(&WallOptions{})
 	err := wall.LoadFromJson("./testdata/rule.json")
 	if err != nil {
 		t.Fatal(err)
@@ -258,7 +258,7 @@ func TestLoadFromJson(t *testing.T) {
 }
 
 func TestLoadFromYaml(t *testing.T) {
-	wall := NewWall()
+	wall := NewWall(&WallOptions{})
 	err := wall.LoadFromYaml("./testdata/rule.yaml")
 	if err != nil {
 		t.Fatal(err)
@@ -273,16 +273,18 @@ func TestLoadFromYaml(t *testing.T) {
 
 func TestWall(t *testing.T) {
 	runServers()
-	wall := NewWall()
+	wall := NewWall(&WallOptions{})
 	err := wall.LoadFromYaml("./testdata/rule.yaml")
 	fatal(err)
 
 	go wall.Run()
-
+	
 	// remove an IP after few seconds to see if it can match the rules normally
-	// time.Sleep(10 * time.Second)
+	time.Sleep(10 * time.Second)
 	// err = wall.RemoveIP("myset", "39.156.66.10")
 	// fatal(err)
+
+	wall.Stop()
 
 	select {}
 }
