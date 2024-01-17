@@ -25,16 +25,16 @@ rules:
         # src: 8080,8081,8000:9000
         # dst: 8080,8081,8000:9000
       limit: 5/minute
-  - interface: ""
-    target: ACCEPT
-    protocol: ICMP
-    source: ""
-    destination: ""
-    matchExtension:
-      limit: 10/minute
-      set:
-        name: myset
-        direction: SRC
+  # - interface: ""
+  #   target: ACCEPT
+  #   protocol: ICMP
+  #   source: ""
+  #   destination: ""
+  #   matchExtension:
+  #     limit: 10/minute
+  #     set:
+  #       name: myset
+  #       direction: SRC
   - interface: lo
     target: DROP
     protocol: UDP

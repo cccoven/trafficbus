@@ -28,9 +28,20 @@ func (s *IPSet) EnabledSize() int {
 	return size
 }
 
-type XdpWall struct {
-	objs       FilterObjects
-	links      map[int]link.Link
+type RuleExtension struct {
+	FilterMatchExt
+	Limiter *FilterBucket
+}
+
+type Rule struct {
+	FilterRule
+	Extension *RuleExtension
+}
+
+type Wall struct {
+	objs  FilterObjects
+	links map[int]link.Link
+	// TODO close this reader
 	rbufReader *ringbuf.Reader
 	sync.Mutex
 
@@ -38,8 +49,8 @@ type XdpWall struct {
 	matchEvent       chan FilterMatchEvent
 }
 
-func NewXdpWall() (*XdpWall, error) {
-	x := &XdpWall{
+func NewWall() (*Wall, error) {
+	x := &Wall{
 		links:      make(map[int]link.Link),
 		matchEvent: make(chan FilterMatchEvent),
 	}
@@ -64,10 +75,10 @@ func NewXdpWall() (*XdpWall, error) {
 	return x, nil
 }
 
-func (x *XdpWall) listenMatchEvent() {
+func (w *Wall) listenMatchEvent() {
 	for {
 		var evt FilterMatchEvent
-		record, err := x.matchEventReader.Read()
+		record, err := w.matchEventReader.Read()
 		if err == ringbuf.ErrClosed {
 			return
 		}
@@ -80,35 +91,35 @@ func (x *XdpWall) listenMatchEvent() {
 			continue
 		}
 
-		x.matchEvent <- evt
+		w.matchEvent <- evt
 	}
 }
 
-func (x *XdpWall) ReadMatchEvent() chan FilterMatchEvent {
-	return x.matchEvent
+func (w *Wall) ReadMatchEvent() chan FilterMatchEvent {
+	return w.matchEvent
 }
 
-func (x *XdpWall) Stop() error {
-	for iface := range x.links {
-		err := x.Detach(iface)
+func (w *Wall) Stop() error {
+	for iface := range w.links {
+		err := w.Detach(iface)
 		if err != nil {
 			return err
 		}
 	}
-	x.matchEventReader.Close()
-	close(x.matchEvent)
+	w.matchEventReader.Close()
+	close(w.matchEvent)
 
-	x.objs.Close()
+	w.objs.Close()
 	return nil
 }
 
-func (x *XdpWall) Attach(iface int) error {
-	x.Lock()
-	defer x.Unlock()
+func (w *Wall) Attach(iface int) error {
+	w.Lock()
+	defer w.Unlock()
 
 	var err error
-	x.links[iface], err = link.AttachXDP(link.XDPOptions{
-		Program:   x.objs.XdpWallFunc,
+	w.links[iface], err = link.AttachXDP(link.XDPOptions{
+		Program:   w.objs.XdpWallFunc,
 		Interface: iface,
 	})
 	if err != nil {
@@ -118,22 +129,22 @@ func (x *XdpWall) Attach(iface int) error {
 	return nil
 }
 
-func (x *XdpWall) Detach(iface int) error {
-	x.Lock()
-	defer x.Unlock()
-	l, ok := x.links[iface]
+func (w *Wall) Detach(iface int) error {
+	w.Lock()
+	defer w.Unlock()
+	l, ok := w.links[iface]
 	if !ok {
 		return fmt.Errorf("link does not exist")
 	}
 	l.Close()
-	delete(x.links, iface)
+	delete(w.links, iface)
 	log.Printf("detached xdp program to iface %q", iface)
 	return nil
 }
 
-func (x *XdpWall) LookupIPSet(key uint32) (IPSet, error) {
+func (w *Wall) LookupIPSet(key uint32) (IPSet, error) {
 	var set IPSet
-	err := x.objs.IpSetMap.Lookup(key, &set)
+	err := w.objs.IpSetMap.Lookup(key, &set)
 	if err != nil {
 		return set, err
 	}
@@ -141,59 +152,104 @@ func (x *XdpWall) LookupIPSet(key uint32) (IPSet, error) {
 	return set, nil
 }
 
-func (x *XdpWall) UpdateIPSet(key uint32, val IPSet) error {
-	return x.objs.IpSetMap.Update(key, val, ebpf.UpdateAny)
+func (w *Wall) UpdateIPSet(key uint32, val IPSet) error {
+	return w.objs.IpSetMap.Update(key, val, ebpf.UpdateAny)
 }
 
-func (x *XdpWall) ListRules() []FilterRule {
+func (w *Wall) ListRules() []*Rule {
 	var key uint32
 	var val FilterRule
-	var rules []FilterRule
-
-	iter := x.objs.RuleMap.Iterate()
+	var rules []*Rule
+	iter := w.objs.RuleMap.Iterate()
 	for iter.Next(&key, &val) {
 		if val.Enable == 1 {
-			rules = append(rules, val)
+			rule := &Rule{}
+			rule.FilterRule = val
+
+			var extension FilterMatchExt
+			err := w.objs.MatchExtMap.Lookup(key, &extension)
+			if err == nil {
+				rule.Extension = &RuleExtension{}
+				rule.Extension.FilterMatchExt = extension
+
+				var bucket FilterBucket
+				err = w.objs.BucketMap.Lookup(key, &bucket)
+				if err == nil {
+					rule.Extension.Limiter = &bucket
+
+				}
+			}
+			rules = append(rules, rule)
+		}
+	}
+	return rules
+}
+
+func (w *Wall) UpdateRule(key uint32, value *Rule) error {
+	rules := w.ListRules()
+	// TODO move elements here
+	// w.objs.RuleMap.
+	if err := w.objs.RuleMap.Update(key, value.FilterRule, ebpf.UpdateAny); err != nil {
+		return err
+	}
+	extension := value.Extension
+	if extension != nil {
+		if err := w.objs.MatchExtMap.Update(key, extension.FilterMatchExt, ebpf.UpdateAny); err != nil {
+			return err
+		}
+		if extension.Limiter != nil {
+			if err := w.objs.BucketMap.Update(key, extension.Limiter, ebpf.UpdateAny); err != nil {
+				return err
+			}
 		}
 	}
 
-	return rules
+	return nil
+}
+
+func (w *Wall) RemovRule(key uint32) error {
+	if err := w.objs.RuleMap.Delete(key); err != nil {
+		return err
+	}
+	_ = w.objs.MatchExtMap.Delete(key)
+	_ = w.objs.BucketMap.Delete(key)
+	return nil
 }
 
 // UpdateRule updates a rule.
 // Since the array is of constant size, deletion operations is not supported.
 // To clear an array element, use Update to insert a zero value to that index.
-func (x *XdpWall) UpdateRule(key uint32, value *FilterRule) error {
-	if value == nil {
-		value = &FilterRule{}
-	}
-	return x.objs.RuleMap.Update(key, value, ebpf.UpdateAny)
-}
+// func (w *Wall) UpdateRule(key uint32, value *FilterRule) error {
+// 	if value == nil {
+// 		value = &FilterRule{}
+// 	}
+// 	return w.objs.RuleMap.Update(key, value, ebpf.UpdateAny)
+// }
 
-func (x *XdpWall) UpdateRules(keys []uint32, values []FilterRule) (int, error) {
-	return x.objs.RuleMap.BatchUpdate(keys, values, nil)
-}
+// func (w *Wall) UpdateRules(keys []uint32, values []FilterRule) (int, error) {
+// 	return w.objs.RuleMap.BatchUpdate(keys, values, nil)
+// }
 
-func (x *XdpWall) UpdateMatchExt(key uint32, value *FilterMatchExt) error {
-	return x.objs.MatchExtMap.Update(key, value, ebpf.UpdateAny)
-}
+// func (w *Wall) UpdateMatchExt(key uint32, value *FilterMatchExt) error {
+// 	return w.objs.MatchExtMap.Update(key, value, ebpf.UpdateAny)
+// }
 
-func (x *XdpWall) UpdateMatchExts(keys []uint32, values []FilterMatchExt) (int, error) {
-	return x.objs.MatchExtMap.BatchUpdate(keys, values, nil)
-}
+// func (w *Wall) UpdateMatchExts(keys []uint32, values []FilterMatchExt) (int, error) {
+// 	return w.objs.MatchExtMap.BatchUpdate(keys, values, nil)
+// }
 
-func (x *XdpWall) DeleteMatchExt(key uint32) error {
-	return x.objs.MatchExtMap.Delete(key)
-}
+// func (w *Wall) DeleteMatchExt(key uint32) error {
+// 	return w.objs.MatchExtMap.Delete(key)
+// }
 
-func (x *XdpWall) UpdateBucket(key uint32, value *FilterBucket) error {
-	return x.objs.BucketMap.Update(key, value, ebpf.UpdateAny)
-}
+// func (w *Wall) UpdateBucket(key uint32, value *FilterBucket) error {
+// 	return w.objs.BucketMap.Update(key, value, ebpf.UpdateAny)
+// }
 
-func (x *XdpWall) UpdateBuckets(keys []uint32, values []FilterBucket) (int, error) {
-	return x.objs.BucketMap.BatchUpdate(keys, values, nil)
-}
+// func (w *Wall) UpdateBuckets(keys []uint32, values []FilterBucket) (int, error) {
+// 	return w.objs.BucketMap.BatchUpdate(keys, values, nil)
+// }
 
-func (x *XdpWall) DeleteBucket(key uint32) error {
-	return x.objs.BucketMap.Delete(key)
-}
+// func (w *Wall) DeleteBucket(key uint32) error {
+// 	return w.objs.BucketMap.Delete(key)
+// }
