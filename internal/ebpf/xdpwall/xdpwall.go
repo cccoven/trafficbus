@@ -186,10 +186,6 @@ func (w *Wall) ListRules() []*Rule {
 }
 
 func (w *Wall) UpdateRule(key uint32, value *Rule) error {
-	err := w.DeleteRule(key)
-	if err != nil {
-		return err
-	}
 	if err := w.objs.RuleMap.Update(key, value.FilterRule, ebpf.UpdateAny); err != nil {
 		return err
 	}
@@ -213,6 +209,23 @@ func (w *Wall) DeleteRule(key uint32) error {
 	}
 	_ = w.objs.MatchExtMap.Delete(key)
 	_ = w.objs.BucketMap.Delete(key)
+	return nil
+}
+
+func (w *Wall) DeleteRuleRange(start, end int) error {
+	var keys []uint32
+	var values []FilterRule
+	for i := start; i < end; i++ {
+		keys = append(keys, uint32(i))
+		values = append(values, FilterRule{})
+	}
+	_, err := w.objs.RuleMap.BatchUpdate(keys, values, nil)
+	if err != nil {
+		return err
+	}
+
+	_, _ = w.objs.MatchExtMap.BatchDelete(keys, nil)
+	_, _ = w.objs.BucketMap.BatchDelete(keys, nil)
 	return nil
 }
 

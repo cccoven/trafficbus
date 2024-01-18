@@ -1,6 +1,7 @@
 package trafficbus
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -191,6 +192,9 @@ func fatal(err error) {
 func printRules(wall *Firewall) {
 	rules := wall.ListRules()
 	rulesRaw := wall.xdp.ListRules()
+	if len(rules) != len(rulesRaw) {
+		fatal(errors.New("the lenth of rules is inconsistent"))
+	}
 
 	for i, rule := range rules {
 		var limitCap, limitCapRaw uint64
@@ -272,6 +276,11 @@ func TestRules(t *testing.T) {
 		},
 	})
 	fatal(err)
+	err = wall.AppendRule(&Rule{
+		Interface: iface,
+		Protocol:  "ICMP",
+	})
+	fatal(err)
 
 	printRules(wall)
 
@@ -280,6 +289,8 @@ func TestRules(t *testing.T) {
 	err = wall.DeleteRule(1)
 	fatal(err)
 	err = wall.DeleteRule(0)
+	fatal(err)
+	err = wall.DeleteRule(2)
 	fatal(err)
 	err = wall.DeleteRule(2)
 	fatal(err)

@@ -440,6 +440,18 @@ func (f *Firewall) InsertRule(pos int, r *Rule) error {
 		// append
 		f.rules = append(f.rules, r)
 	} else {
+		// delete elements after `pos` first
+		err = f.xdp.DeleteRuleRange(pos+1, size)
+		if err != nil {
+			return err
+		}
+		// for i := pos + 1; i < size; i++ {
+		// 	err = f.xdp.DeleteRule(uint32(i))
+		// 	if err != nil {
+		// 		return err
+		// 	}
+		// }
+
 		for i, v := range rules[pos:] {
 			if err = f.xdp.UpdateRule(uint32(i+pos+1), v); err != nil {
 				return err
@@ -480,14 +492,19 @@ func (f *Firewall) DeleteRule(pos int) error {
 		return fmt.Errorf("pos %d out of range", pos)
 	}
 
-	err := f.xdp.DeleteRule(uint32(pos))
-	if err != nil {
-		return err
-	}
+	if pos == size {
+		err := f.xdp.DeleteRule(uint32(pos))
+		if err != nil {
+			return err
+		}
+	} else {
+		err := f.xdp.DeleteRuleRange(pos, size)
+		if err != nil {
+			return err
+		}
 
-	if pos != size {
 		for i, v := range rules[pos+1:] {
-			if err = f.xdp.UpdateRule(uint32(i+pos), v); err != nil {
+			if err := f.xdp.UpdateRule(uint32(i+pos), v); err != nil {
 				return err
 			}
 		}
