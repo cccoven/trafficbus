@@ -6,6 +6,8 @@ import (
 	"net"
 	"testing"
 	"time"
+
+	"github.com/cccoven/trafficbus/internal"
 )
 
 func echoServerTCP(addr string) {
@@ -186,60 +188,104 @@ func fatal(err error) {
 // 	printIPSet(wall, "myset")
 // }
 
-// func printRules(wall *Wall) {
-// 	rules, err := wall.ListRule()
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
+func printRules(wall *Firewall) {
+	rules := wall.ListRules()
+	rulesRaw := wall.xdp.ListRules()
 
-// 	rulesRaw := wall.xdp.ListRules()
+	for i, rule := range rules {
+		var limitCap, limitCapRaw uint64
+		if rule.MatchExtension != nil {
+			if rule.MatchExtension.Limit != "" {
+				b, err := wall.converter.ParseLimit(rule.MatchExtension.Limit)
+				if err != nil {
+					fatal(err)
+				}
+				limitCap = b.Capacity
+			}
+		}
 
-// 	for i, rule := range rules {
-// 		fmt.Printf(
-// 			"iface: %s/%-10dprot: %s/%-10dsrc: %s/%-20sdst: %s/%-20s\n",
-// 			rule.Interface,
-// 			rulesRaw[i].Interface,
-// 			rule.Protocol,
-// 			rulesRaw[i].Protocol,
-// 			rule.Source,
-// 			internal.IntToIP(rulesRaw[i].Source),
-// 			rule.Destination,
-// 			internal.IntToIP(rulesRaw[i].Destination),
-// 		)
-// 	}
-// }
+		if rulesRaw[i].MatchExtension != nil {
+			limitCapRaw = rulesRaw[i].MatchExtension.Limiter.Capacity
+		}
+		fmt.Printf(
+			"iface: %s/%-10dprot: %s/%-10dsrc: %s/%-10slimit: %d/%-10d\n",
+			rule.Interface,
+			rulesRaw[i].Interface,
+			rule.Protocol,
+			rulesRaw[i].Protocol,
+			rule.Source,
+			internal.IntToIP(rulesRaw[i].Source),
+			limitCap,
+			limitCapRaw,
+		)
+	}
+}
 
-// func TestRules(t *testing.T) {
-// 	wall := NewWall(&WallOptions{})
-// 	iface := "lo"
-// 	data := []*Rule{
-// 		{Interface: iface, Protocol: "ICMP"},
-// 		{Interface: iface, Protocol: "TCP"},
-// 		{Interface: iface, Protocol: "UDP"},
-// 	}
+func TestRules(t *testing.T) {
+	wall := NewFirewall()
+	iface := "lo"
+	data := []*Rule{
+		{
+			Interface: iface,
+			Protocol:  "ICMP",
+			MatchExtension: &MatchExtension{
+				Limit: "5/second",
+			},
+		},
+		{
+			Interface: iface,
+			Protocol:  "TCP",
+			MatchExtension: &MatchExtension{
+				Limit: "10/minute",
+			},
+		},
+		{
+			Interface: iface,
+			Protocol:  "UDP",
+			MatchExtension: &MatchExtension{
+				Limit: "15/hour",
+			},
+		},
+	}
 
-// 	err := wall.AppendRule(data...)
-// 	fatal(err)
+	err := wall.AppendRule(data...)
+	fatal(err)
 
-// 	printRules(wall)
+	printRules(wall)
 
-// 	fmt.Println("Insert...")
+	fmt.Println("Insert...")
 
-// 	err = wall.InsertRule(1, &Rule{Interface: iface, Protocol: "UDP"})
-// 	fatal(err)
+	err = wall.InsertRule(1, &Rule{
+		Interface: iface,
+		Protocol:  "UDP",
+		MatchExtension: &MatchExtension{
+			Limit: "6/second",
+		},
+	})
+	fatal(err)
 
-// 	err = wall.AppendRule(&Rule{Interface: iface, Protocol: "TCP"})
-// 	fatal(err)
+	err = wall.AppendRule(&Rule{
+		Interface: iface,
+		Protocol:  "TCP",
+		MatchExtension: &MatchExtension{
+			Limit: "7/second",
+		},
+	})
+	fatal(err)
 
-// 	printRules(wall)
+	printRules(wall)
 
-// 	fmt.Println("Remove...")
+	fmt.Println("Remove...")
 
-// 	err = wall.RemoveRule(1)
-// 	fatal(err)
+	err = wall.DeleteRule(1)
+	fatal(err)
+	err = wall.DeleteRule(0)
+	fatal(err)
+	err = wall.DeleteRule(2)
+	fatal(err)
 
-// 	printRules(wall)
-// }
+	printRules(wall)
+}
 
 // func TestLoadFromJson(t *testing.T) {
 // 	wall := NewWall(&WallOptions{})
@@ -255,19 +301,19 @@ func fatal(err error) {
 // 	printRules(wall)
 // }
 
-// func TestLoadFromYaml(t *testing.T) {
-// 	wall := NewWall(&WallOptions{})
-// 	err := wall.LoadFromYaml("./testdata/rule.yaml")
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
+func TestLoadFromYaml(t *testing.T) {
+	wall := NewFirewall()
+	err := wall.LoadFromYaml("./testdata/rule.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
 
-// 	fmt.Println("ipSet:")
-// 	printIPSet(wall, "myset")
+	// fmt.Println("ipSet:")
+	// printIPSet(wall, "myset")
 
-// 	fmt.Println("rules:")
-// 	printRules(wall)
-// }
+	fmt.Println("rules:")
+	printRules(wall)
+}
 
 func TestFirewall(t *testing.T) {
 	runServers()

@@ -259,9 +259,9 @@ func (c *ruleConverter) ParseLimit(s string) (*xdpwall.FilterBucket, error) {
 	return ret, nil
 }
 
-func (c *ruleConverter) ParseMatchExtension(ext *MatchExtension) (*xdpwall.RuleExtension, error) {
+func (c *ruleConverter) ParseMatchExtension(ext *MatchExtension) (*xdpwall.RuleMatchExtension, error) {
 	var err error
-	ret := &xdpwall.RuleExtension{}
+	ret := &xdpwall.RuleMatchExtension{}
 	// ip set
 	if ext.Set != nil {
 		ret.Set, err = c.ParseIPSet(ext.Set)
@@ -320,7 +320,7 @@ func (c *ruleConverter) ParseRule(r *Rule) (*xdpwall.Rule, error) {
 	}
 
 	if r.MatchExtension != nil {
-		rule.Extension, err = c.ParseMatchExtension(r.MatchExtension)
+		rule.MatchExtension, err = c.ParseMatchExtension(r.MatchExtension)
 		if err != nil {
 			return nil, err
 		}
@@ -335,7 +335,7 @@ type Firewall struct {
 	ls        net.Listener
 
 	ipSets map[string]*IPSet
-	rules []*Rule
+	rules  []*Rule
 }
 
 type RulePayload struct {
@@ -416,6 +416,10 @@ func (f *Firewall) listenSock() {
 	}
 }
 
+func (f *Firewall) ListRules() []*Rule {
+	return f.rules
+}
+
 func (f *Firewall) InsertRule(pos int, r *Rule) error {
 	rules := f.xdp.ListRules()
 	size := len(rules)
@@ -441,11 +445,6 @@ func (f *Firewall) InsertRule(pos int, r *Rule) error {
 				return err
 			}
 		}
-		// for i := pos; i < size; i++ {
-		// 	if err = f.xdp.UpdateRule(uint32(i+1), rules[i]); err != nil {
-		// 		return err
-		// 	}
-		// }
 		f.rules = append(f.rules, nil)
 		copy(f.rules[pos+1:], f.rules[pos:])
 		f.rules[pos] = r
@@ -474,48 +473,27 @@ func (f *Firewall) AppendRule(rules ...*Rule) error {
 	return nil
 }
 
-func (f *Firewall) RemoveRule(pos int) error {
+func (f *Firewall) DeleteRule(pos int) error {
 	rules := f.xdp.ListRules()
 	size := len(rules)
 	if pos > size {
 		return fmt.Errorf("pos %d out of range", pos)
 	}
 
-	err := f.xdp.RemovRule(uint32(pos))
+	err := f.xdp.DeleteRule(uint32(pos))
 	if err != nil {
 		return err
 	}
 
-	if pos == size {
-		f.rules = append(f.rules[:pos], f.rules[pos+1:]...)
-	} else {
-		// for i, v := range rules[pos:] {
-		// 	if err = f.xdp.UpdateRule(uint32(i+pos+1), v); err != nil {
-		// 		return err
-		// 	}
-		// }
-		// for i := pos; i < size; i++ {
-		// 	err := w.parser.SyncRule(uint32(i+1), f.rules[i])
-		// 	if err != nil {
-		// 		return err
-		// 	}
-		// }
-		// f.rules = append(f.rules[:pos], f.rules[pos+1:]...)
-		// copy(rules[pos:], rules[pos+1:])
-		// size--
-		// var keys []uint32
-		// var values []xdpwall.FilterRule
-		// for i := pos; i < size; i++ {
-		// 	keys = append(keys, uint32(i))
-		// 	values = append(values, rules[i])
-		// }
-		// _, err := w.xdp.UpdateRules(keys, values)
-		// if err != nil {
-		// 	return err
-		// }
+	if pos != size {
+		for i, v := range rules[pos+1:] {
+			if err = f.xdp.UpdateRule(uint32(i+pos), v); err != nil {
+				return err
+			}
+		}
 	}
 
-	// f.rules = append(f.rules[:pos], f.rules[pos+1:]...)
+	f.rules = append(f.rules[:pos], f.rules[pos+1:]...)
 	return nil
 }
 

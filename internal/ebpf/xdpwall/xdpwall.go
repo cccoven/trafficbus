@@ -28,14 +28,14 @@ func (s *IPSet) EnabledSize() int {
 	return size
 }
 
-type RuleExtension struct {
+type RuleMatchExtension struct {
 	FilterMatchExt
 	Limiter *FilterBucket
 }
 
 type Rule struct {
 	FilterRule
-	Extension *RuleExtension
+	MatchExtension *RuleMatchExtension
 }
 
 type Wall struct {
@@ -169,13 +169,13 @@ func (w *Wall) ListRules() []*Rule {
 			var extension FilterMatchExt
 			err := w.objs.MatchExtMap.Lookup(key, &extension)
 			if err == nil {
-				rule.Extension = &RuleExtension{}
-				rule.Extension.FilterMatchExt = extension
+				rule.MatchExtension = &RuleMatchExtension{}
+				rule.MatchExtension.FilterMatchExt = extension
 
 				var bucket FilterBucket
 				err = w.objs.BucketMap.Lookup(key, &bucket)
 				if err == nil {
-					rule.Extension.Limiter = &bucket
+					rule.MatchExtension.Limiter = &bucket
 
 				}
 			}
@@ -186,13 +186,14 @@ func (w *Wall) ListRules() []*Rule {
 }
 
 func (w *Wall) UpdateRule(key uint32, value *Rule) error {
-	rules := w.ListRules()
-	// TODO move elements here
-	// w.objs.RuleMap.
+	err := w.DeleteRule(key)
+	if err != nil {
+		return err
+	}
 	if err := w.objs.RuleMap.Update(key, value.FilterRule, ebpf.UpdateAny); err != nil {
 		return err
 	}
-	extension := value.Extension
+	extension := value.MatchExtension
 	if extension != nil {
 		if err := w.objs.MatchExtMap.Update(key, extension.FilterMatchExt, ebpf.UpdateAny); err != nil {
 			return err
@@ -203,12 +204,11 @@ func (w *Wall) UpdateRule(key uint32, value *Rule) error {
 			}
 		}
 	}
-
 	return nil
 }
 
-func (w *Wall) RemovRule(key uint32) error {
-	if err := w.objs.RuleMap.Delete(key); err != nil {
+func (w *Wall) DeleteRule(key uint32) error {
+	if err := w.objs.RuleMap.Update(key, &FilterRule{}, ebpf.UpdateAny); err != nil {
 		return err
 	}
 	_ = w.objs.MatchExtMap.Delete(key)
