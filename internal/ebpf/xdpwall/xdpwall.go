@@ -299,13 +299,13 @@ func (w *Wall) InsertRule(key int, rule *Rule) error {
 	}
 
 	if key < size {
-		// delete elements after index `key`
+		// delete elements first
 		err = w.deleteRuleRange(key+1, size)
 		if err != nil {
 			return err
 		}
 
-		// move elements after index `key`
+		// move elements
 		var keys []uint32
 		var vals []*Rule
 		for i, v := range rules[key:] {

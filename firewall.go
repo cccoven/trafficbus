@@ -23,7 +23,8 @@ type RuleOperation int
 const (
 	OpAppend RuleOperation = iota + 1
 	OpInsert
-	OpRemove
+	OpDelete
+	OpList
 	OpClear
 )
 
@@ -378,6 +379,7 @@ func (f *Firewall) handleSock(conn net.Conn) {
 		log.Println("error reading data:", err)
 		return
 	}
+	log.Println("rule payload:", string(buffer[:n]))
 
 	var payload RulePayload
 	err = json.Unmarshal(buffer[:n], &payload)
@@ -391,17 +393,22 @@ func (f *Firewall) handleSock(conn net.Conn) {
 		err := f.AppendRule(payload.Rule)
 		if err != nil {
 			// TODO write back error message
+			log.Println(err)
 		}
-		break
 	case OpInsert:
-		break
-	case OpRemove:
-		break
+		err := f.InsertRule(payload.Index, payload.Rule)
+		if err != nil {
+			// TODO write back error message
+			log.Println(err)
+		}
+	case OpDelete:
+		err := f.DeleteRule(payload.Index)
+		if err != nil {
+			// TODO write back error message
+			log.Println(err)
+		}
 	case OpClear:
-		break
 	}
-
-	log.Printf("op: %d, index: %d, rule: %v", payload.Op, payload.Index, payload.Rule)
 }
 
 func (f *Firewall) listenSock() {
@@ -537,6 +544,11 @@ func (f *Firewall) AppendRule(rules ...*Rule) error {
 }
 
 func (f *Firewall) DeleteRule(pos int) error {
+	size := len(f.rules)
+	if pos > size {
+		return fmt.Errorf("pos %d out of range", pos)
+	}
+	
 	err := f.xdp.DeleteRule(pos)
 	if err != nil {
 		return err
