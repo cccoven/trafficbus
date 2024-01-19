@@ -26,14 +26,14 @@ var wallRunOptions WallRunOptions
 // var wallRuleOptions WallRuleOptions
 var wallRuleOptions = WallRuleOptions{
 	Rule: &trafficbus.Rule{
-		// MatchExtension: &trafficbus.MatchExtension{
-		// 	Set: &trafficbus.SetExtension{},
-		// 	UDP: &trafficbus.UDPExtension{},
-		// 	TCP: &trafficbus.TCPExtension{
-		// 		Flags: &trafficbus.TCPFlags{},
-		// 	},
-		// 	MultiPort: &trafficbus.MultiPortExtension{},
-		// },
+		MatchExtension: &trafficbus.MatchExtension{
+			Set: &trafficbus.SetExtension{},
+			UDP: &trafficbus.UDPExtension{},
+			TCP: &trafficbus.TCPExtension{
+				Flags: &trafficbus.TCPFlags{},
+			},
+			MultiPort: &trafficbus.MultiPortExtension{},
+		},
 	},
 }
 
@@ -57,7 +57,7 @@ var wallRuleCmd = &cobra.Command{
 
 func init() {
 	wallCmd.AddCommand(wallRunCmd, wallRuleCmd)
-	wallRunCmd.Flags().StringVarP(&wallRunOptions.RuleFile, "rule-file", "f", "rule.yaml", "Firewall rule file")
+	wallRunCmd.Flags().StringVarP(&wallRunOptions.RuleFile, "rule-file", "f", "", "Firewall rule file")
 
 	wallRuleCmd.Flags().StringVarP(&wallRuleOptions.Rule.Interface, "interface", "i", "", "Network interface")
 	wallRuleCmd.Flags().StringVarP(&wallRuleOptions.Rule.Target, "target", "t", "", "Target")
@@ -68,23 +68,16 @@ func init() {
 }
 
 func wallRun(cmd *cobra.Command, args []string) error {
-	// wall = trafficbus.NewWall(&trafficbus.WallOptions{})
-	// if err := wall.Run(); err != nil {
-	// 	return fmt.Errorf("failed to start command wall: %s", err.Error())
-	// }
-
-	// wait()
-	// wall.Stop()
-
 	wall := trafficbus.NewFirewall()
 
-	err := wall.LoadFromYaml(wallRunOptions.RuleFile)
-	if err != nil {
-		return fmt.Errorf("failed to start command wall: %s", err.Error())
+	if wallRunOptions.RuleFile != "" {
+		err := wall.LoadFromYaml(wallRunOptions.RuleFile)
+		if err != nil {
+			return fmt.Errorf("failed to start command wall: %s", err.Error())
+		}
 	}
 
 	wall.Run()
-
 	return nil
 }
 

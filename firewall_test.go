@@ -153,41 +153,42 @@ func fatal(err error) {
 	}
 }
 
-// func printIPSet(wall *Wall, setName string) {
-// 	set, err := wall.LookupIPSet(setName)
-// 	fatal(err)
+func printIPSet(wall *Firewall, setName string) {
+	set, err := wall.LookupIPSet(setName)
+	fatal(err)
 
-// 	setRaw, err := wall.xdp.LookupIPSet(str2hash(setName))
-// 	fatal(err)
+	setRaw, err := wall.xdp.LookupSet(str2hash(setName))
+	fatal(err)
 
-// 	for i, addr := range set.Addrs {
-// 		fmt.Printf("addr: %-20sraw: %-20s\n", addr, internal.IntToIP(setRaw[i].Addr))
-// 	}
-// }
+	for i, addr := range set.Addrs {
+		raw := internal.IntToIP(setRaw[i].Addr)
+		fmt.Printf("addr: %-20sraw: %-20s\n", addr, raw)
+	}
+}
 
-// func TestIPSet(t *testing.T) {
-// 	wall := NewWall(&WallOptions{})
+func TestIPSet(t *testing.T) {
+	wall := NewFirewall()
 
-// 	err := wall.CreateIPSet("myset")
-// 	fatal(err)
+	err := wall.CreateIPSet("myset")
+	fatal(err)
 
-// 	err = wall.AppendIP("myset", "127.0.0.1", "0.0.0.0", "192.168.0.0/16", "1.1.1.1")
-// 	fatal(err)
+	err = wall.AppendIP("myset", "127.0.0.1", "0.0.0.0", "192.168.0.0/16", "1.1.1.1")
+	fatal(err)
 
-// 	err = wall.AppendIP("myset", "2.2.2.2")
-// 	fatal(err)
+	err = wall.AppendIP("myset", "2.2.2.2")
+	fatal(err)
 
-// 	printIPSet(wall, "myset")
+	printIPSet(wall, "myset")
 
-// 	fmt.Printf("\nRemove...\n\n")
+	fmt.Printf("\nRemove...\n\n")
 
-// 	err = wall.RemoveIP("myset", "0.0.0.0")
-// 	fatal(err)
-// 	err = wall.RemoveIP("myset", "1.1.1.1")
-// 	fatal(err)
+	err = wall.RemoveIP("myset", "0.0.0.0")
+	fatal(err)
+	err = wall.RemoveIP("myset", "1.1.1.1")
+	fatal(err)
 
-// 	printIPSet(wall, "myset")
-// }
+	printIPSet(wall, "myset")
+}
 
 func printRules(wall *Firewall) {
 	rules := wall.ListRules()
@@ -298,19 +299,19 @@ func TestRules(t *testing.T) {
 	printRules(wall)
 }
 
-// func TestLoadFromJson(t *testing.T) {
-// 	wall := NewWall(&WallOptions{})
-// 	err := wall.LoadFromJson("./testdata/rule.json")
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
+func TestLoadFromJson(t *testing.T) {
+	wall := NewFirewall()
+	err := wall.LoadFromJson("./testdata/rule.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 
-// 	fmt.Println("ipSet:")
-// 	printIPSet(wall, "myset")
+	fmt.Println("ipSet:")
+	printIPSet(wall, "myset")
 
-// 	fmt.Println("rules:")
-// 	printRules(wall)
-// }
+	fmt.Println("rules:")
+	printRules(wall)
+}
 
 func TestLoadFromYaml(t *testing.T) {
 	wall := NewFirewall()
@@ -319,8 +320,8 @@ func TestLoadFromYaml(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// fmt.Println("ipSet:")
-	// printIPSet(wall, "myset")
+	fmt.Println("ipSet:")
+	printIPSet(wall, "myset")
 
 	fmt.Println("rules:")
 	printRules(wall)

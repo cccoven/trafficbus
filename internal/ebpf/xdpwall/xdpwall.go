@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"hash/fnv"
 	"log"
 	"sync"
 
@@ -38,11 +39,19 @@ type Rule struct {
 	MatchExtension *RuleMatchExtension
 }
 
+// str2hash use uint32 hash as ipset name
+func str2hash(s string) uint32 {
+	if s == "" {
+		return 0
+	}
+	hasher := fnv.New32()
+	hasher.Write([]byte(s))
+	return hasher.Sum32()
+}
+
 type Wall struct {
 	objs  FilterObjects
 	links map[int]link.Link
-	// TODO close this reader
-	rbufReader *ringbuf.Reader
 	sync.Mutex
 
 	matchEventReader *ringbuf.Reader
@@ -142,7 +151,7 @@ func (w *Wall) Detach(iface int) error {
 	return nil
 }
 
-func (w *Wall) LookupIPSet(key uint32) (IPSet, error) {
+func (w *Wall) LookupSet(key uint32) (IPSet, error) {
 	var set IPSet
 	err := w.objs.IpSetMap.Lookup(key, &set)
 	if err != nil {
@@ -152,8 +161,38 @@ func (w *Wall) LookupIPSet(key uint32) (IPSet, error) {
 	return set, nil
 }
 
-func (w *Wall) UpdateIPSet(key uint32, val IPSet) error {
-	return w.objs.IpSetMap.Update(key, val, ebpf.UpdateAny)
+func (w *Wall) CreateSet(key uint32) error {
+	return w.objs.IpSetMap.Update(key, IPSet{}, ebpf.UpdateNoExist)
+}
+
+func (w *Wall) AppendIP(key uint32, ips ...FilterIpItem) error {
+	set, err := w.LookupSet(key)
+	if err != nil {
+		return err
+	}
+	size := set.EnabledSize()
+
+	for i, ip := range ips {
+		set[i+size] = ip
+	}
+
+	return w.objs.IpSetMap.Update(key, set, ebpf.UpdateAny)
+}
+
+func (w *Wall) RemoveIP(key uint32, ip FilterIpItem) error {
+	set, err := w.LookupSet(key)
+	if err != nil {
+		return err
+	}
+
+	for i, item := range set {
+		if item.Addr == ip.Addr && item.Mask == ip.Mask {
+			copy(set[i:], set[i+1:])
+			break
+		}
+	}
+
+	return w.objs.IpSetMap.Update(key, set, ebpf.UpdateAny)
 }
 
 func (w *Wall) ListRules() []*Rule {
@@ -176,7 +215,6 @@ func (w *Wall) ListRules() []*Rule {
 				err = w.objs.BucketMap.Lookup(key, &bucket)
 				if err == nil {
 					rule.MatchExtension.Limiter = &bucket
-
 				}
 			}
 			rules = append(rules, rule)
@@ -185,7 +223,7 @@ func (w *Wall) ListRules() []*Rule {
 	return rules
 }
 
-func (w *Wall) UpdateRule(key uint32, value *Rule) error {
+func (w *Wall) updateRule(key uint32, value *Rule) error {
 	if err := w.objs.RuleMap.Update(key, value.FilterRule, ebpf.UpdateAny); err != nil {
 		return err
 	}
@@ -203,7 +241,89 @@ func (w *Wall) UpdateRule(key uint32, value *Rule) error {
 	return nil
 }
 
-func (w *Wall) DeleteRule(key uint32) error {
+func (w *Wall) batchUpdateRules(keys []uint32, values []*Rule) error {
+	var (
+		rules              []FilterRule
+		matchExtensionKeys []uint32
+		matchExtensionVals []FilterMatchExt
+		bucketKeys         []uint32
+		bucketVals         []FilterBucket
+	)
+
+	for i, r := range values {
+		rules = append(rules, r.FilterRule)
+		if r.MatchExtension != nil {
+			matchExtensionKeys = append(matchExtensionKeys, keys[i])
+			matchExtensionVals = append(matchExtensionVals, r.MatchExtension.FilterMatchExt)
+
+			if r.MatchExtension.Limiter != nil {
+				bucketKeys = append(bucketKeys, keys[i])
+				bucketVals = append(bucketVals, *r.MatchExtension.Limiter)
+			}
+		}
+	}
+	_, err := w.objs.RuleMap.BatchUpdate(keys, rules, nil)
+	if err != nil {
+		return err
+	}
+	_, err = w.objs.MatchExtMap.BatchUpdate(matchExtensionKeys, matchExtensionVals, nil)
+	if err != nil {
+		return err
+	}
+	_, err = w.objs.BucketMap.BatchUpdate(bucketKeys, bucketVals, nil)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (w *Wall) AppendRule(rules ...*Rule) error {
+	size := len(w.ListRules())
+	var keys []uint32
+	var vals []*Rule
+	for i, r := range rules {
+		keys = append(keys, uint32(i+size))
+		vals = append(vals, r)
+	}
+	return w.batchUpdateRules(keys, vals)
+}
+
+func (w *Wall) InsertRule(key int, rule *Rule) error {
+	rules := w.ListRules()
+	size := len(rules)
+
+	err := w.updateRule(uint32(key), rule)
+	if err != nil {
+		return nil
+	}
+
+	if key < size {
+		// delete elements after index `key`
+		err = w.deleteRuleRange(key+1, size)
+		if err != nil {
+			return err
+		}
+
+		// move elements after index `key`
+		var keys []uint32
+		var vals []*Rule
+		for i, v := range rules[key:] {
+			keys = append(keys, uint32(i+key+1))
+			vals = append(vals, v)
+		}
+		err = w.batchUpdateRules(keys, vals)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (w *Wall) deleteRule(key uint32) error {
+	// Since the array is of constant size, deletion operations is not supported.
+	// To clear an array element, use Update to insert a zero value to that index.
 	if err := w.objs.RuleMap.Update(key, &FilterRule{}, ebpf.UpdateAny); err != nil {
 		return err
 	}
@@ -212,57 +332,53 @@ func (w *Wall) DeleteRule(key uint32) error {
 	return nil
 }
 
-func (w *Wall) DeleteRuleRange(start, end int) error {
-	var keys []uint32
+func (w *Wall) batchDeleteRules(keys []uint32) error {
 	var values []FilterRule
-	for i := start; i < end; i++ {
-		keys = append(keys, uint32(i))
+	for range keys {
 		values = append(values, FilterRule{})
 	}
 	_, err := w.objs.RuleMap.BatchUpdate(keys, values, nil)
 	if err != nil {
 		return err
 	}
-
 	_, _ = w.objs.MatchExtMap.BatchDelete(keys, nil)
 	_, _ = w.objs.BucketMap.BatchDelete(keys, nil)
 	return nil
 }
 
-// UpdateRule updates a rule.
-// Since the array is of constant size, deletion operations is not supported.
-// To clear an array element, use Update to insert a zero value to that index.
-// func (w *Wall) UpdateRule(key uint32, value *FilterRule) error {
-// 	if value == nil {
-// 		value = &FilterRule{}
-// 	}
-// 	return w.objs.RuleMap.Update(key, value, ebpf.UpdateAny)
-// }
+func (w *Wall) DeleteRule(key int) error {
+	rules := w.ListRules()
+	size := len(rules)
 
-// func (w *Wall) UpdateRules(keys []uint32, values []FilterRule) (int, error) {
-// 	return w.objs.RuleMap.BatchUpdate(keys, values, nil)
-// }
+	if key == size {
+		err := w.deleteRule(uint32(key))
+		if err != nil {
+			return err
+		}
+	} else {
+		err := w.deleteRuleRange(key, size)
+		if err != nil {
+			return err
+		}
 
-// func (w *Wall) UpdateMatchExt(key uint32, value *FilterMatchExt) error {
-// 	return w.objs.MatchExtMap.Update(key, value, ebpf.UpdateAny)
-// }
+		var keys []uint32
+		var vals []*Rule
+		for i, v := range rules[key+1:] {
+			keys = append(keys, uint32(i+key))
+			vals = append(vals, v)
+		}
+		err = w.batchUpdateRules(keys, vals)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
-// func (w *Wall) UpdateMatchExts(keys []uint32, values []FilterMatchExt) (int, error) {
-// 	return w.objs.MatchExtMap.BatchUpdate(keys, values, nil)
-// }
-
-// func (w *Wall) DeleteMatchExt(key uint32) error {
-// 	return w.objs.MatchExtMap.Delete(key)
-// }
-
-// func (w *Wall) UpdateBucket(key uint32, value *FilterBucket) error {
-// 	return w.objs.BucketMap.Update(key, value, ebpf.UpdateAny)
-// }
-
-// func (w *Wall) UpdateBuckets(keys []uint32, values []FilterBucket) (int, error) {
-// 	return w.objs.BucketMap.BatchUpdate(keys, values, nil)
-// }
-
-// func (w *Wall) DeleteBucket(key uint32) error {
-// 	return w.objs.BucketMap.Delete(key)
-// }
+func (w *Wall) deleteRuleRange(start, end int) error {
+	var keys []uint32
+	for i := start; i < end; i++ {
+		keys = append(keys, uint32(i))
+	}
+	return w.batchDeleteRules(keys)
+}

@@ -2,6 +2,7 @@ package trafficbus
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"log"
@@ -138,6 +139,18 @@ type ruleConverter struct{}
 
 func newRuleConverter() *ruleConverter {
 	return &ruleConverter{}
+}
+
+func (c *ruleConverter) ParseIPItem(ip string) (xdpwall.FilterIpItem, error) {
+	var err error
+	item := xdpwall.FilterIpItem{
+		Enable: 1,
+	}
+	item.Addr, item.Mask, err = internal.ParseV4CIDRU32(ip)
+	if err != nil {
+		return item, err
+	}
+	return item, nil
 }
 
 func (c *ruleConverter) ParseIPSet(ori *SetExtension) (xdpwall.FilterSetExt, error) {
@@ -325,7 +338,6 @@ func (c *ruleConverter) ParseRule(r *Rule) (*xdpwall.Rule, error) {
 			return nil, err
 		}
 	}
-
 	return rule, nil
 }
 
@@ -357,10 +369,9 @@ func NewFirewall() *Firewall {
 	return w
 }
 
-func (f *Firewall) handle(conn net.Conn) {
+func (f *Firewall) handleSock(conn net.Conn) {
 	defer conn.Close()
 
-	// 读取客户端发送的数据
 	buffer := make([]byte, 1024)
 	n, err := conn.Read(buffer)
 	if err != nil {
@@ -390,7 +401,6 @@ func (f *Firewall) handle(conn net.Conn) {
 		break
 	}
 
-	// 打印收到的数据
 	log.Printf("op: %d, index: %d, rule: %v", payload.Op, payload.Index, payload.Rule)
 }
 
@@ -412,8 +422,68 @@ func (f *Firewall) listenSock() {
 			continue
 		}
 
-		go f.handle(conn)
+		go f.handleSock(conn)
 	}
+}
+
+func (f *Firewall) LookupIPSet(setName string) (*IPSet, error) {
+	return f.ipSets[setName], nil
+}
+
+func (f *Firewall) CreateIPSet(setName string) error {
+	err := f.xdp.CreateSet(str2hash(setName))
+	if err != nil {
+		return err
+	}
+	f.ipSets[setName] = &IPSet{Name: setName}
+	return nil
+}
+
+func (f *Firewall) AppendIP(setName string, ips ...string) error {
+	_, ok := f.ipSets[setName]
+	if !ok {
+		return errors.New("set does not exist")
+	}
+
+	var ipItems []xdpwall.FilterIpItem
+	for _, ip := range ips {
+		item, err := f.converter.ParseIPItem(ip)
+		if err != nil {
+			return err
+		}
+		ipItems = append(ipItems, item)
+	}
+	err := f.xdp.AppendIP(str2hash(setName), ipItems...)
+	if err != nil {
+		return err
+	}
+
+	f.ipSets[setName].Addrs = append(f.ipSets[setName].Addrs, ips...)
+	return nil
+}
+
+func (f *Firewall) RemoveIP(setName string, ip string) error {
+	ipSet, ok := f.ipSets[setName]
+	if !ok {
+		return errors.New("set does not exist")
+	}
+
+	ipItem, err := f.converter.ParseIPItem(ip)
+	if err != nil {
+		return err
+	}
+	err = f.xdp.RemoveIP(str2hash(setName), ipItem)
+	if err != nil {
+		return err
+	}
+
+	for i, addr := range ipSet.Addrs {
+		if addr == ip {
+			ipSet.Addrs = append(ipSet.Addrs[:i], ipSet.Addrs[i+1:]...)
+			break
+		}
+	}
+	return nil
 }
 
 func (f *Firewall) ListRules() []*Rule {
@@ -421,8 +491,7 @@ func (f *Firewall) ListRules() []*Rule {
 }
 
 func (f *Firewall) InsertRule(pos int, r *Rule) error {
-	rules := f.xdp.ListRules()
-	size := len(rules)
+	size := len(f.rules)
 	if pos > size {
 		return fmt.Errorf("pos %d out of range", pos)
 	}
@@ -431,37 +500,17 @@ func (f *Firewall) InsertRule(pos int, r *Rule) error {
 	if err != nil {
 		return err
 	}
-
-	if err = f.xdp.UpdateRule(uint32(pos), rule); err != nil {
+	if err = f.xdp.InsertRule(pos, rule); err != nil {
 		return err
 	}
 
 	if pos == size {
-		// append
 		f.rules = append(f.rules, r)
 	} else {
-		// delete elements after `pos` first
-		err = f.xdp.DeleteRuleRange(pos+1, size)
-		if err != nil {
-			return err
-		}
-		// for i := pos + 1; i < size; i++ {
-		// 	err = f.xdp.DeleteRule(uint32(i))
-		// 	if err != nil {
-		// 		return err
-		// 	}
-		// }
-
-		for i, v := range rules[pos:] {
-			if err = f.xdp.UpdateRule(uint32(i+pos+1), v); err != nil {
-				return err
-			}
-		}
 		f.rules = append(f.rules, nil)
 		copy(f.rules[pos+1:], f.rules[pos:])
 		f.rules[pos] = r
 	}
-
 	return nil
 }
 
@@ -469,62 +518,44 @@ func (f *Firewall) AppendRule(rules ...*Rule) error {
 	if len(rules) == 0 {
 		return nil
 	}
-	size := len(f.xdp.ListRules())
-	for i, r := range rules {
+
+	var parsedRules []*xdpwall.Rule
+	for _, r := range rules {
 		rule, err := f.converter.ParseRule(r)
 		if err != nil {
 			return err
 		}
-		err = f.xdp.UpdateRule(uint32(i+size), rule)
-		if err != nil {
-			return err
-		}
+		parsedRules = append(parsedRules, rule)
 	}
 
+	err := f.xdp.AppendRule(parsedRules...)
+	if err != nil {
+		return err
+	}
 	f.rules = append(f.rules, rules...)
 	return nil
 }
 
 func (f *Firewall) DeleteRule(pos int) error {
-	rules := f.xdp.ListRules()
-	size := len(rules)
-	if pos > size {
-		return fmt.Errorf("pos %d out of range", pos)
+	err := f.xdp.DeleteRule(pos)
+	if err != nil {
+		return err
 	}
-
-	if pos == size {
-		err := f.xdp.DeleteRule(uint32(pos))
-		if err != nil {
-			return err
-		}
-	} else {
-		err := f.xdp.DeleteRuleRange(pos, size)
-		if err != nil {
-			return err
-		}
-
-		for i, v := range rules[pos+1:] {
-			if err := f.xdp.UpdateRule(uint32(i+pos), v); err != nil {
-				return err
-			}
-		}
-	}
-
 	f.rules = append(f.rules[:pos], f.rules[pos+1:]...)
 	return nil
 }
 
 func (f *Firewall) loadFormat(format *RuleFormat) error {
-	// for _, ipset := range format.IPSets {
-	// 	err := w.CreateIPSet(ipset.Name)
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// 	err = w.AppendIP(ipset.Name, ipset.Addrs...)
-	// 	if err != nil {
-	// 		return err
-	// 	}
-	// }
+	for _, ipset := range format.IPSets {
+		err := f.CreateIPSet(ipset.Name)
+		if err != nil {
+			return err
+		}
+		err = f.AppendIP(ipset.Name, ipset.Addrs...)
+		if err != nil {
+			return err
+		}
+	}
 
 	err := f.AppendRule(format.Rules...)
 	if err != nil {
