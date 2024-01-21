@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -465,12 +466,14 @@ func (f *Firewall) listenSock() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer f.ls.Close()
 
 	log.Println("server listening on unix domain socket:", SockFile)
 
 	for {
 		conn, err := f.ls.Accept()
+		if err == io.EOF {
+			return
+		}
 		if err != nil {
 			continue
 		}
@@ -692,5 +695,6 @@ func (f *Firewall) Run() error {
 }
 
 func (f *Firewall) Stop() error {
+	f.ls.Close()
 	return f.xdp.Stop()
 }
