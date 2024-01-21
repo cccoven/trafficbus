@@ -2,9 +2,12 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
+	"io"
 	"net"
+	"os"
+	"strconv"
+	"text/tabwriter"
 
 	"github.com/cccoven/trafficbus"
 	"github.com/spf13/cobra"
@@ -15,8 +18,10 @@ type WallRunOptions struct {
 }
 
 type WallRuleOptions struct {
-	Op             string
-	Index          int
+	Append         bool
+	Insert         int
+	Delete         int
+	List           bool
 	Rule           *trafficbus.Rule
 	MatchExtension bool
 	Set            bool
@@ -25,7 +30,11 @@ type WallRuleOptions struct {
 }
 
 var wallRunOptions WallRunOptions
-var wallRuleOptions = WallRuleOptions{Rule: &trafficbus.Rule{}}
+var wallRuleOptions = WallRuleOptions{
+	Rule: &trafficbus.Rule{
+		MatchExtension: &trafficbus.MatchExtension{},
+	},
+}
 
 var wallCmd = &cobra.Command{
 	Use:   "wall",
@@ -50,18 +59,21 @@ var wallRuleCmd = &cobra.Command{
 
 func init() {
 	wallCmd.AddCommand(wallRunCmd, wallRuleCmd)
-	wallRunCmd.Flags().StringVarP(&wallRunOptions.RuleFile, "rule-file", "f", "", "Firewall rule file")
+	wallRunCmd.Flags().StringVarP(&wallRunOptions.RuleFile, "rule-file", "f", "", "firewall rule file")
 
-	wallRuleCmd.Flags().StringVarP(&wallRuleOptions.Op, "opration", "o", "", "Operation on this rule")
-	wallRuleCmd.Flags().IntVarP(&wallRuleOptions.Index, "num", "n", -1, "Number of this rule")
-	wallRuleCmd.Flags().StringVarP(&wallRuleOptions.Rule.Interface, "interface", "i", "", "Network interface")
-	wallRuleCmd.Flags().StringVarP(&wallRuleOptions.Rule.Target, "target", "t", "", "Target")
-	wallRuleCmd.Flags().StringVarP(&wallRuleOptions.Rule.Protocol, "protocol", "p", "", "IP protocol")
-	wallRuleCmd.Flags().StringVarP(&wallRuleOptions.Rule.Source, "source", "s", "0.0.0.0/0", "Source address")
-	wallRuleCmd.Flags().StringVarP(&wallRuleOptions.Rule.Destination, "destination", "d", "0.0.0.0/0", "Destination address")
+	wallRuleCmd.Flags().BoolVarP(&wallRuleOptions.Append, "append", "A", false, "append a rule")
+	wallRuleCmd.Flags().IntVarP(&wallRuleOptions.Insert, "insert", "I", 0, "insert a rule")
+	wallRuleCmd.Flags().IntVarP(&wallRuleOptions.Delete, "delete", "D", 0, "delete a rule")
+	wallRuleCmd.Flags().BoolVarP(&wallRuleOptions.List, "list", "L", false, "list rules")
 
-	wallRuleCmd.Flags().BoolVarP(&wallRuleOptions.MatchExtension, "match-extension", "m", false, "Enable match extension")
-	wallRuleCmd.Flags().BoolVar(&wallRuleOptions.TCP, "tcp", false, "Protocol TCP")
+	wallRuleCmd.Flags().StringVarP(&wallRuleOptions.Rule.Interface, "interface", "i", "ALL", "network interface")
+	wallRuleCmd.Flags().StringVarP(&wallRuleOptions.Rule.Target, "target", "t", "", "target")
+	wallRuleCmd.Flags().StringVarP(&wallRuleOptions.Rule.Protocol, "protocol", "p", "", "protocol")
+	wallRuleCmd.Flags().StringVarP(&wallRuleOptions.Rule.Source, "source", "s", "0.0.0.0/0", "source address")
+	wallRuleCmd.Flags().StringVarP(&wallRuleOptions.Rule.Destination, "destination", "d", "0.0.0.0/0", "destination address")
+
+	wallRuleCmd.Flags().BoolVarP(&wallRuleOptions.MatchExtension, "match-extension", "m", false, "enable match extension")
+	wallRuleCmd.Flags().BoolVar(&wallRuleOptions.TCP, "tcp", false, "protocol TCP")
 }
 
 func wallRun(cmd *cobra.Command, args []string) error {
@@ -87,36 +99,75 @@ func wallRuleRun(cmd *cobra.Command, args []string) error {
 	}
 	defer conn.Close()
 
-	var op trafficbus.RuleOperation
-	switch wallRuleOptions.Op {
-	case "append":
-		op = trafficbus.OpAppend
-	case "insert":
-		op = trafficbus.OpInsert
-	case "delete":
-		op = trafficbus.OpDelete
-	case "clear":
-		op = trafficbus.OpClear
-	case "list":
-		op = trafficbus.OpList
-	default:
-		return errors.New("invalid operation")
+	var payload trafficbus.RulePayload
+
+	if wallRuleOptions.Append {
+		payload.Op = trafficbus.OpAppend
+		payload.Rule = wallRuleOptions.Rule
+	}
+	if wallRuleOptions.Insert > 0 {
+		payload.Op = trafficbus.OpInsert
+		payload.Rule = wallRuleOptions.Rule
+		payload.Index = wallRuleOptions.Insert - 1
+	}
+	if wallRuleOptions.Delete > 0 {
+		payload.Op = trafficbus.OpDelete
+		payload.Rule = wallRuleOptions.Rule
+		payload.Index = wallRuleOptions.Delete - 1
+	}
+	if wallRuleOptions.List {
+		payload.Op = trafficbus.OpList
 	}
 
-	if wallRuleOptions.MatchExtension {
-		wallRuleOptions.Rule.MatchExtension = &trafficbus.MatchExtension{}
-	}
-
-	payload := trafficbus.RulePayload{
-		Op:    op,
-		Index: wallRuleOptions.Index,
-		Rule:  wallRuleOptions.Rule,
-	}
 	rule, _ := json.Marshal(payload)
 	_, err = conn.Write(rule)
 	if err != nil {
 		return err
 	}
 
+	var respPayload trafficbus.RuleRespPayload
+	resp, err := io.ReadAll(conn)
+	if err != nil {
+		return err
+	}
+	err = json.Unmarshal(resp, &respPayload)
+	if err != nil {
+		return err
+	}
+
+	switch respPayload.Op {
+	case trafficbus.OpAppend:
+	case trafficbus.OpInsert:
+	case trafficbus.OpDelete:
+	case trafficbus.OpList:
+		if respPayload.Data != nil {
+			var rules []*trafficbus.Rule
+			err = json.Unmarshal([]byte(respPayload.Data.(string)), &rules)
+			if err != nil {
+				return err
+			}
+			printRuleList(rules)
+		}
+	case trafficbus.OpClear:
+	}
+
 	return nil
+}
+
+func printRuleList(rules []*trafficbus.Rule) {
+	const format = "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n"
+	tw := tabwriter.NewWriter(os.Stdout, 10, 10, 10, ' ', 0)
+	fmt.Fprintf(tw, format, "Num", "Packets", "Bytes", "Interface", "Target", "Protocol", "Source", "Destination")
+
+	for i, r := range rules {
+		if r.Interface == "" {
+			r.Interface = "ALL"
+		}
+		if r.Protocol == "" {
+			r.Protocol = "ALL"
+		}
+		fmt.Fprintf(tw, format, strconv.Itoa(i+1), strconv.Itoa(r.Packets), strconv.FormatUint(r.Bytes, 10), r.Interface, r.Target, r.Protocol, r.Source, r.Destination)
+	}
+
+	tw.Flush()
 }

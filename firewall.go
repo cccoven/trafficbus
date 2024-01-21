@@ -109,8 +109,8 @@ type MatchExtension struct {
 type TargetExtension struct{}
 
 type Rule struct {
-	Packets int    `json:"-"`
-	Bytes   uint64 `json:"-"`
+	Packets int    `json:"packets"`
+	Bytes   uint64 `json:"bytes"`
 
 	Interface       string           `json:"interface"`
 	Target          string           `json:"target" yaml:"target"`
@@ -342,6 +342,28 @@ func (c *ruleConverter) ParseRule(r *Rule) (*xdpwall.Rule, error) {
 	return rule, nil
 }
 
+type RulePayload struct {
+	Op    RuleOperation `json:"op"`
+	Index int           `json:"index"`
+	Rule  *Rule         `json:"rule"`
+}
+
+type RuleRespPayload struct {
+	Op      RuleOperation `json:"op"`
+	Success bool          `json:"success"`
+	Data    any           `json:"data"`
+	Error   string        `json:"error"`
+}
+
+func NewRuleRespPayload(op RuleOperation, success bool, data any, err string) RuleRespPayload {
+	return RuleRespPayload{
+		Op:      op,
+		Success: success,
+		Data:    data,
+		Error:   err,
+	}
+}
+
 type Firewall struct {
 	xdp       *xdpwall.Wall
 	converter *ruleConverter
@@ -349,12 +371,6 @@ type Firewall struct {
 
 	ipSets map[string]*IPSet
 	rules  []*Rule
-}
-
-type RulePayload struct {
-	Op    RuleOperation `json:"op"`
-	Index int           `json:"index"`
-	Rule  *Rule         `json:"rule"`
 }
 
 func NewFirewall() *Firewall {
@@ -391,20 +407,50 @@ func (f *Firewall) handleSock(conn net.Conn) {
 	switch payload.Op {
 	case OpAppend:
 		err := f.AppendRule(payload.Rule)
+		var resp RuleRespPayload
 		if err != nil {
-			// TODO write back error message
+			resp = NewRuleRespPayload(payload.Op, false, nil, err.Error())
+		} else {
+			resp = NewRuleRespPayload(payload.Op, true, nil, "")
+		}
+		res, _ := json.Marshal(resp)
+		_, err = conn.Write(res)
+		if err != nil {
 			log.Println(err)
 		}
 	case OpInsert:
 		err := f.InsertRule(payload.Index, payload.Rule)
+		var resp RuleRespPayload
 		if err != nil {
-			// TODO write back error message
+			resp = NewRuleRespPayload(payload.Op, false, nil, err.Error())
+		} else {
+			resp = NewRuleRespPayload(payload.Op, true, nil, "")
+		}
+		res, _ := json.Marshal(resp)
+		_, err = conn.Write(res)
+		if err != nil {
 			log.Println(err)
 		}
 	case OpDelete:
 		err := f.DeleteRule(payload.Index)
+		var resp RuleRespPayload
 		if err != nil {
-			// TODO write back error message
+			resp = NewRuleRespPayload(payload.Op, false, nil, err.Error())
+		} else {
+			resp = NewRuleRespPayload(payload.Op, true, nil, "")
+		}
+		res, _ := json.Marshal(resp)
+		_, err = conn.Write(res)
+		if err != nil {
+			log.Println(err)
+		}
+	case OpList:
+		rules := f.ListRules()
+		b, _ := json.Marshal(rules)
+		resp := NewRuleRespPayload(payload.Op, true, string(b), "")
+		res, _ := json.Marshal(resp)
+		_, err := conn.Write(res)
+		if err != nil {
 			log.Println(err)
 		}
 	case OpClear:
@@ -421,7 +467,7 @@ func (f *Firewall) listenSock() {
 	}
 	defer f.ls.Close()
 
-	log.Println("Server listening on unix domain socket: ", SockFile)
+	log.Println("server listening on unix domain socket:", SockFile)
 
 	for {
 		conn, err := f.ls.Accept()
@@ -545,10 +591,10 @@ func (f *Firewall) AppendRule(rules ...*Rule) error {
 
 func (f *Firewall) DeleteRule(pos int) error {
 	size := len(f.rules)
-	if pos > size {
+	if pos >= size {
 		return fmt.Errorf("pos %d out of range", pos)
 	}
-	
+
 	err := f.xdp.DeleteRule(pos)
 	if err != nil {
 		return err
@@ -623,7 +669,7 @@ func (f *Firewall) receiveEvents() {
 			}
 			rule.Packets++
 			rule.Bytes += me.Bytes
-			log.Printf("rule.index: %d, rule.pkts: %d, rule.bytes: %d", me.RuleIndex, rule.Packets, rule.Bytes)
+			// log.Printf("rule.index: %d, rule.pkts: %d, rule.bytes: %d", me.RuleIndex, rule.Packets, rule.Bytes)
 		}
 	}
 }
