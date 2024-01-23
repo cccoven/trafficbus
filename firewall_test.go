@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cccoven/trafficbus/internal"
+	"github.com/cccoven/trafficbus/internal/ipaddr"
 )
 
 func echoServerTCP(addr string) {
@@ -161,7 +161,7 @@ func printIPSet(wall *Firewall, setName string) {
 	fatal(err)
 
 	for i, addr := range set.Addrs {
-		raw := internal.IntToIP(setRaw[i].Addr)
+		raw := ipaddr.IntToIP(setRaw[i].Addr)
 		fmt.Printf("addr: %-20sraw: %-20s\n", addr, raw)
 	}
 }
@@ -219,7 +219,7 @@ func printRules(wall *Firewall) {
 			rule.Protocol,
 			rulesRaw[i].Protocol,
 			rule.Source,
-			internal.IntToIP(rulesRaw[i].Source),
+			ipaddr.IntToIP(rulesRaw[i].Source),
 			limitCap,
 			limitCapRaw,
 		)

@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cccoven/trafficbus/internal"
+	"github.com/cccoven/trafficbus/internal/ipaddr"
 	"github.com/cccoven/trafficbus/internal/ebpf/xdpwall"
 	"github.com/spf13/viper"
 )
@@ -148,7 +148,7 @@ func (c *ruleConverter) ParseIPItem(ip string) (xdpwall.FilterIpItem, error) {
 	item := xdpwall.FilterIpItem{
 		Enable: 1,
 	}
-	item.Addr, item.Mask, err = internal.ParseV4CIDRU32(ip)
+	item.Addr, item.Mask, err = ipaddr.ParseV4CIDRU32(ip)
 	if err != nil {
 		return item, err
 	}
@@ -325,11 +325,11 @@ func (c *ruleConverter) ParseRule(r *Rule) (*xdpwall.Rule, error) {
 	}
 	rule.Target = xdpTargetMap[r.Target]
 	rule.Protocol = xdpProtocolMap[r.Protocol]
-	rule.Source, rule.SourceMask, err = internal.ParseV4CIDRU32(r.Source)
+	rule.Source, rule.SourceMask, err = ipaddr.ParseV4CIDRU32(r.Source)
 	if err != nil {
 		return nil, err
 	}
-	rule.Destination, rule.DestinationMask, err = internal.ParseV4CIDRU32(r.Destination)
+	rule.Destination, rule.DestinationMask, err = ipaddr.ParseV4CIDRU32(r.Destination)
 	if err != nil {
 		return nil, err
 	}
